@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual runs on a fork: Actions must be enabled in the repo settings first, then this
+  # makes the suite runnable on demand (and from `gh workflow run`) without a dummy commit.
+  workflow_dispatch:
 
 jobs:
   unittest:
