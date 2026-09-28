@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.2] - 2026-09-28
+
+### Fixed
+- **The process benchmark's verdict no longer depends on filesystem enumeration order.** A skill can live in more than one category folder — the fixture has `obsidian` under both `productivity/` and `note-taking/` — and `inventory()` keeps whichever copy it enumerates first. Which copy that is differs between macOS and Linux, so a manifest naming the `note-taking` category was judged correctly on macOS and reported as leaking `obsidian` on Linux. The gate passed locally and failed in CI with 2 of 46 domains breaching, which is what surfaced it. The oracle now collects every category a skill appears in rather than trusting one arbitrary copy, and the same skill is allowed if any of its copies is in a requested category.
+
+### Added
+- `bench/order_mutation_check.py`, in CI: reverses enumeration order and requires an identical verdict. It exits non-zero naming the affected domains if the single-copy logic returns, so this cannot regress unnoticed.
+
 ## [0.15.1] - 2026-09-28
 
 An independent adversarial review of the harness work found three real defects and one

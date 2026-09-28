@@ -203,6 +203,38 @@ def _own_skill_name(skill_md: Path) -> str:
     return m.group(1).strip() if m else skill_md.parent.name
 
 
+def _categories_by_name(available: dict[str, Path], roots: list[Path]) -> dict[str, set[str]]:
+    """Every category each skill name appears in, across ALL of its copies.
+
+    `available` keeps one path per name (first one wins), so a skill that exists in two
+    category folders is represented by a single arbitrary copy. Using that copy's category
+    makes the oracle depend on filesystem enumeration order, which differs between macOS and
+    Linux — the same manifest then passes on one platform and fails on the other. So walk
+    every root again and collect the full set.
+    """
+    def category_of(path: Path) -> str:
+        for r in roots:
+            try:
+                rel = path.relative_to(r).parts
+            except ValueError:
+                continue
+            if len(rel) > 1:
+                return rel[0]
+        return ""
+
+    out: dict[str, set[str]] = {n: set() for n in available}
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for skill_md in sorted(root.rglob("SKILL.md")):
+            name = _own_skill_name(skill_md)
+            if name in out:
+                cat = category_of(skill_md)
+                if cat:
+                    out[name].add(cat)
+    return out
+
+
 def check_domain(profile: Path, manifest: dict, floor: set[str]) -> dict:
     """Run the real pipeline against one manifest and evaluate the three properties."""
     cats = set(harness._name_list(manifest.get("skill_categories")))
@@ -245,24 +277,20 @@ def check_domain(profile: Path, manifest: dict, floor: set[str]) -> dict:
     # was cited as covering. Read the config here instead.
     roots = _skill_roots(profile)
 
-    def category_of(path: Path) -> str:
-        for r in roots:
-            try:
-                rel = path.relative_to(r).parts
-            except ValueError:
-                continue
-            if len(rel) > 1:
-                return rel[0]
-        return ""
-
     # The floor is re-derived here, not taken from floor_skills(): that helper resolves
     # against the same code path under test, so it agreed with the bug. The three rules a
     # skill must satisfy to be exempt from curation, spelled out independently.
-    local_names = {n for n, p in available.items() if str(p).startswith(str(profile / "skills"))}
-    derived_floor = {n for n, p in available.items()
-                     if n in harness.NEVER_DISABLE or n in ALWAYS_ON or category_of(p) in harness.ALWAYS_KEEP}
+    # Categories come from ALL copies of a skill (see _categories_by_name), for the same
+    # reason: a single arbitrary copy makes the answer depend on enumeration order.
+    multi_cat = _categories_by_name(available, roots)
+    all_cats = multi_cat
+    derived_floor = {n for n in all_cats
+                     if n in harness.NEVER_DISABLE or n in ALWAYS_ON
+                     or all_cats[n] & set(harness.ALWAYS_KEEP)}
 
-    allowed = named | {n for n, p in available.items() if category_of(p) in cats} | derived_floor
+    allowed = (named
+               | {n for n, cats_of in all_cats.items() if cats_of & set(cats)}
+               | derived_floor)
     leaks = sorted(keep - allowed)
     # Every loadable skill outside the allowlist must be disabled — external ones included,
     # because `skills.disabled` is matched by name across all skill directories. Anything
@@ -273,7 +301,7 @@ def check_domain(profile: Path, manifest: dict, floor: set[str]) -> dict:
     # ALWAYS_KEEP is unconditional: a skill in one of those categories is never disabled,
     # from ANY root. Asserted as a floor invariant rather than a category check, because a
     # per-manifest check only covers it when the manifest happens to name such a category.
-    always_keep_members = {n for n, p in available.items() if category_of(p) in harness.ALWAYS_KEEP}
+    always_keep_members = {n for n, cats_of in all_cats.items() if cats_of & set(harness.ALWAYS_KEEP)}
     floor_violations = sorted(always_keep_members & disabled)
     # ── efficiency: a spec that names skills and no categories must keep exactly those
     #    skills plus the floor. Any extra skill is padding the spec did not ask for.

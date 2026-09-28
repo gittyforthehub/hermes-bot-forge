@@ -47,3 +47,8 @@ jobs:
         # breaking external-dir discovery broke both sides and all 46 gates still passed.
         # This breaks the implementation and requires --gated to notice.
         run: python bench/external_mutation_check.py
+      - name: Enumeration-order independence check
+        # A skill can live in two category folders. Which copy "wins" depends on rglob order,
+        # which differs between macOS and Linux — the benchmark passed locally and failed in
+        # CI for exactly this reason. Force the other order and require the same verdict.
+        run: python bench/order_mutation_check.py
