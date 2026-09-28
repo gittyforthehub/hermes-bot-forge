@@ -94,43 +94,52 @@ failure. Set `optional: false` for a skill the domain genuinely cannot work with
 
 ### Design rules
 
-- **List skills explicitly. Avoid broad `skill_categories`.** This is the one rule the
-  benchmark exists to enforce. Keeping a whole category pulls in everything filed under
-  it, and category membership is not expertise:
-
-  | manifest | skills kept | F1 | precision |
-  |---|---|---|---|
-  | 3 broad categories | 25 | 0.387 | 0.240 |
-  | 1 category | 17 | 0.522 | 0.353 |
-  | **explicit `skills` only** | **10** | **0.750** | **0.600** |
-
-  Use `skill_categories` only when the whole category genuinely *is* the job. Naming
-  `research` to get one web-search skill costs you `arxiv` and `llm-wiki` too.
+- **List skills explicitly. Avoid broad `skill_categories`.** Keeping a whole category pulls
+  in everything filed under it, and category membership is not expertise. Naming `research`
+  to get one web-search skill also gets you `arxiv` and `llm-wiki`. Use `skill_categories`
+  only when the whole category genuinely *is* the job.
 - **Local skills beat registry skills** for anything a project already depends on —
   Appllama's iOS design skills, for instance, are not on any public registry.
 - **Mark approvals honestly.** A harness that installs a trading skill without an
   approval checkpoint is a harness that will eventually place a real order.
 
-### The benchmark
+### The process benchmark
 
 ```bash
-python3 bench/benchmark.py            # score stock vs harness across four domains
-python3 bench/benchmark.py --gated    # same, plus regression gates (CI runs this)
-python3 bench/benchmark.py --json     # machine-readable
+python3 bench/process_bench.py            # invariants across 46 generated domains
+python3 bench/process_bench.py --gated    # same, plus hard CI gates
+python3 bench/process_bench.py --negative # prove the gates catch real faults
+python3 bench/process_bench.py --json     # machine-readable
 ```
 
-Gold sets are written independently of the manifests, so a manifest cannot score itself.
-Domains without a bundled manifest fall back to category-only selection, which is exactly
-what an uncurated domain gets — so shipping a manifest for `trading` or `social-media`
-would show up immediately as a real improvement rather than a free pass.
+There is no benchmark for "is this a good trading Bot" and there cannot be — that would
+need someone who knows trading. Instead the benchmark tests the **general process**,
+which is the only part that can be checked for every domain without domain expertise:
 
-Current result: **mean F1 0.193 → 0.288**, precision 0.115 → 0.192, irrelevant skills
-carried 14.5 → 10.8, gold skills missed 5 → 3. Excluding the always-on floor, curated F1
-is 0.251 → 0.379.
+| invariant | meaning | result |
+|---|---|---|
+| `fidelity` | every skill the spec names is enabled, or reported as a gap — never silently dropped | 46/46 |
+| `contamination` | nothing survives that the spec did not ask for, beyond the universal floor | 46/46 |
+| `efficiency` | a spec naming skills and no categories keeps exactly those skills plus the floor — no padding | 46/46 |
+| `deterministic` | the same manifest always produces the same plan | 46/46 |
+| `idempotent` | applying the plan twice equals applying it once | 46/46 |
 
-The honest limit: three of the four domains have no manifest, so the mean is dominated by
-`ios`. The number is a floor for a one-manifest plugin, not evidence that the approach
-scales — add manifests and re-run to see whether it does.
+The corpus is 40 generated manifests plus six deliberately awkward edge cases (no skills,
+no categories, everything, skills that do not exist, missing and unknown fields, duplicate
+entries). It is offline and deterministic.
+
+**What it deliberately does not claim.** Curation does not always keep *fewer* skills than
+stock bot-forge — on 14 of 46 domains it keeps more, and that is correct. Stock answers
+"give me a category"; a manifest that names six specific skills legitimately carries more
+than stock's one category. That is the manifest being precise, not padded. So skill count
+is reported as context, never gated. A harness earns trust on fidelity and the absence of
+contamination, not on winning a count contest against a different question.
+
+**Why the gates can be trusted.** A benchmark that passes because it checks nothing is
+worse than no benchmark, so `--negative` injects four faults into the real pipeline —
+silently dropping missing skills, padding the allowlist, adding a category fallback to an
+exact spec, and making planning order-dependent — and confirms each invariant fails. All
+four are caught.
 
 ## Anything not listed
 
@@ -171,16 +180,19 @@ Two subtleties worth knowing if you read the code:
 
 ```bash
 python -m unittest discover -s tests
-python bench/benchmark.py --gated
+python bench/process_bench.py --gated
+python bench/process_bench.py --negative
 ```
 
 The harness suite covers inventory, allowlist planning, the external-dirs rules, the
-registry JSON parsing, failure handling, and the `forge()` wiring. The benchmark scores
-stock creation against curated selection on four domains with independently-written gold
-sets, and gates the shipped manifests so a broader manifest fails CI. The integration
-tests stub profile creation, so everything runs offline in under a second.
+registry JSON parsing, failure handling, and the `forge()` wiring. The process benchmark
+checks five domain-agnostic invariants across 46 generated manifests, and the negative
+tests prove each gate fails when the behaviour it guards is broken. The integration
+tests stub profile creation, so everything runs offline in seconds.
 
 ## Contributing a manifest
 
 Add `harnesses/<domain>.json` and a test asserting it loads and has a summary. The
-manifest is the whole contribution — no code required.
+manifest is the whole contribution — no code required. The process benchmark already
+guarantees the pipeline delivers any manifest faithfully; whether the manifest names the
+*right* skills for the domain is the judgment a contributor brings.
