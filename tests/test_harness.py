@@ -164,33 +164,68 @@ class ManifestTests(unittest.TestCase):
 
 
 class RegistryParseTests(unittest.TestCase):
+    """The CLI's `--json` output is the contract. Long identifiers get truncated and wrapped
+    in the human table, so parsing JSON is the only safe path."""
+
     SAMPLE = """
-                Skills Hub — 2 result(s)
-┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
-┃ Name            ┃ Description ┃ Source   ┃ Trust     ┃ Identifier     ┃
-┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
-│ swiftui         │ Builds      │ skills.sh│ community │ skills-sh/x/y   │
-│                 │ interfaces  │           │           │                 │
-│ swift-concurrency│ Swift ARC   │ clawhub  │ community │ swift           │
-└─────────────────┴────────────┴──────────┴────────────┴─────────────────┘
+noise before the payload
+[
+  {
+    "name": "swiftui",
+    "identifier": "skills-sh/prisma-labs-dev/apple-skills/swiftui",
+    "source": "skills.sh",
+    "trust_level": "community",
+    "description": "Indexed by skills.sh from prisma-labs-dev/apple-skills"
+  },
+  {
+    "name": "swiftui-animation",
+    "identifier": "skills-sh/dpearson2699/swift-ios-skills/swiftui-animation",
+    "source": "skills.sh",
+    "trust_level": "community",
+    "description": "Indexed by skills.sh from dpearson2699/swift-ios-skills"
+  }
+]
 """
 
-    def test_parses_rows_and_ignores_borders(self):
-        rows = registry.parse_search_table(self.SAMPLE)
-        names = [r["name"] for r in rows]
-        self.assertIn("swiftui", names)
-        self.assertIn("swift-concurrency", names)
-        self.assertNotIn("Name", names)
+    def test_extracts_json_past_leading_noise(self):
+        data = registry._json_from(self.SAMPLE)
+        self.assertIsInstance(data, list)
+        self.assertEqual(len(data), 2)
 
-    def test_parsed_identifier_is_captured(self):
-        rows = registry.parse_search_table(self.SAMPLE)
-        row = next(r for r in rows if r["name"] == "swift-concurrency")
-        self.assertEqual(row["identifier"], "swift")
-        self.assertEqual(row["source"], "clawhub")
+    def test_garbage_input_yields_none(self):
+        self.assertIsNone(registry._json_from("no json here"))
+        self.assertIsNone(registry._json_from(""))
+        self.assertIsNone(registry._json_from("[not closed"))
 
-    def test_garbage_input_yields_empty_list(self):
-        self.assertEqual(registry.parse_search_table("no table here"), [])
-        self.assertEqual(registry.parse_search_table(""), [])
+    def test_norm_keeps_full_identifiers(self):
+        row = registry._norm({"name": "swiftui",
+                              "identifier": "skills-sh/prisma-labs-dev/apple-skills/swiftui",
+                              "source": "skills.sh", "trust_level": "community"})
+        self.assertEqual(row["identifier"], "skills-sh/prisma-labs-dev/apple-skills/swiftui")
+        self.assertEqual(row["trust"], "community")
+        self.assertEqual(row["name"], "swiftui")
+
+    def test_norm_accepts_alternate_field_names(self):
+        row = registry._norm({"name": "x", "id": "clawhub-x", "trust": "official"})
+        self.assertEqual(row["identifier"], "clawhub-x")
+        self.assertEqual(row["trust"], "official")
+
+    def test_norm_collapses_multiline_description(self):
+        row = registry._norm({"name": "x", "description": "line one\n   line two"})
+        self.assertEqual(row["description"], "line one line two")
+
+    def test_norm_tolerates_missing_fields(self):
+        row = registry._norm({})
+        self.assertEqual(row["name"], "")
+        self.assertEqual(row["identifier"], "")
+        self.assertEqual(row["description"], "")
+
+    def test_no_corrupt_split_identifiers(self):
+        """Regression: the human table wrapped long identifiers across lines, which a table
+        parser turned into garbage like '-labs-dev/apple-' + 'skills/swiftui'."""
+        for row in (registry._norm(r) for r in (registry._json_from(self.SAMPLE) or [])):
+            self.assertNotIn(" ", row["identifier"])
+            self.assertTrue(row["identifier"].startswith(("skills-sh/", "clawhub")))
 
 
 class FakeRegistry:
