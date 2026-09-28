@@ -49,6 +49,47 @@ class HarnessInventoryTests(unittest.TestCase):
         self.assertEqual(harness.inventory(self.profile / "nope"), {})
 
 
+class MalformedManifestTests(unittest.TestCase):
+    """Manifests are community-authored JSON, so a typo must not raise.
+
+    A contributor submitting `"skills": "not-a-list"` gets a reported gap, not a crash that
+    takes down an unrelated `create_agent` call.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.profile = Path(self.tmp.name)
+        make_skill(self.profile / "skills", "finance/stocks", "stocks")
+        make_skill(self.profile / "skills", "planner/plan", "omh-plan")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_bare_string_skill_is_one_name_not_characters(self):
+        r = harness.plan(self.profile, {"skills": "stocks", "skill_categories": []})
+        self.assertEqual(r["missing"], [], "a bare string is a one-item list, not iterable chars")
+        self.assertIn("stocks", r["keep"])
+
+    def test_non_list_categories_do_not_raise(self):
+        r = harness.plan(self.profile, {"skill_categories": 5, "skills": ["stocks"]})
+        self.assertIn("stocks", r["keep"])
+
+    def test_empty_and_missing_keys_are_thin_not_fatal(self):
+        for manifest in ({}, {"domain": "x"}, {"skills": None}, {"skill_categories": None}):
+            r = harness.plan(self.profile, manifest)
+            self.assertIsInstance(r["keep"], list)
+            self.assertIsInstance(r["disabled"], list)
+
+    def test_unknown_string_skill_is_reported_as_missing(self):
+        r = harness.plan(self.profile, {"skills": "not-a-list", "skill_categories": []})
+        self.assertEqual(r["missing"], ["not-a-list"])
+
+    def test_dict_input_does_not_raise(self):
+        # e.g. `"skills": {"a": 1}` — iterate the keys at worst, never explode
+        r = harness.plan(self.profile, {"skills": {"stocks": True}, "skill_categories": []})
+        self.assertIsInstance(r["keep"], list)
+
+
 class HarnessPlanTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

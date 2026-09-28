@@ -133,8 +133,10 @@ def stock_keep(profile: Path, manifest: dict, floor: set[str]) -> set[str]:
 
 def check_domain(profile: Path, manifest: dict, floor: set[str]) -> dict:
     """Run the real pipeline against one manifest and evaluate the three properties."""
-    cats = set(manifest.get("skill_categories") or [])
-    named = {str(s) for s in (manifest.get("skills") or [])}
+    cats = set(harness._name_list(manifest.get("skill_categories")))
+    # Normalize exactly as the pipeline does, or this check measures its own fixture:
+    # `" stocks "` is one skill name, not a gap.
+    named = set(harness._name_list(manifest.get("skills")))
     result = harness.plan(profile, manifest)
     keep = set(result["keep"])
     available = harness.inventory_with_externals(profile)

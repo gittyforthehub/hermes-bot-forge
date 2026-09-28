@@ -154,18 +154,35 @@ NEVER_DISABLE = frozenset({"hermes-agent"})
 
 
 # ── curation ─────────────────────────────────────────────────────────────────
+def _name_list(value) -> list[str]:
+    """A manifest's name list, tolerating whatever a contributor actually wrote.
+
+    Manifests are community-authored JSON, so the schema has to survive bad input without
+    crashing the build. A bare string is read as a one-item list (not iterated into
+    characters), and a number or null yields nothing rather than a TypeError.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if isinstance(value, (list, tuple, set)):
+        return [str(v).strip() for v in value if str(v).strip()]
+    return []
+
+
 def plan(profile_dir: Path, manifest: dict, cfg: dict | None = None) -> dict:
     """Compute the enable/disable sets for `manifest` against a real profile directory.
 
     Pure: touches no files, so it is safe to call from tests and from a dry run.
     `cfg` may be passed to supply the profile config (for `skills.external_dirs`); when omitted
-    the config is read from disk.
+    the config is read from disk. A malformed manifest produces a thin result, never an
+    exception: a contributor's typo must not take down an unrelated `create_agent` call.
     """
     skills_dir = profile_dir / "skills"
     inv = inventory(skills_dir)                       # profile-local: the only ones we may disable
     all_inv = inventory_with_externals(profile_dir, cfg)  # everything actually loadable
-    categories = {str(c) for c in (manifest.get("skill_categories") or [])}
-    required = {str(s) for s in (manifest.get("skills") or [])}
+    categories = set(_name_list(manifest.get("skill_categories")))
+    required = set(_name_list(manifest.get("skills")))
     categories |= ALWAYS_KEEP
 
     keep_names: set[str] = set()

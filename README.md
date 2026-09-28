@@ -4,8 +4,8 @@
 
 <p align="center">
   <a href="https://hermes-agent.nousresearch.com/docs/plugins/"><img src="https://img.shields.io/badge/Hermes%20plugin%20catalog-listed-22D3EE?style=flat-square" alt="in the Hermes plugin catalog"></a>
-  <a href="https://github.com/BkashJEE/hermes-bot-forge/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/BkashJEE/hermes-bot-forge/tests.yml?style=flat-square&label=tests" alt="tests"></a>
-  <a href="https://github.com/BkashJEE/hermes-bot-forge/releases"><img src="https://img.shields.io/github/v/release/BkashJEE/hermes-bot-forge?style=flat-square&color=8B5CF6" alt="release"></a>
+  <a href="https://github.com/jacobgottlieb0/hermes-bot-forge/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/jacobgottlieb0/hermes-bot-forge/tests.yml?style=flat-square&label=tests" alt="tests"></a>
+  <a href="https://github.com/jacobgottlieb0/hermes-bot-forge/releases"><img src="https://img.shields.io/github/v/release/jacobgottlieb0/hermes-bot-forge?style=flat-square&color=8B5CF6" alt="release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64748B?style=flat-square" alt="MIT"></a>
 </p>
 
@@ -30,6 +30,68 @@ Bot Forge is a [Hermes Agent](https://github.com/NousResearch/hermes-agent) plug
 | 🔌 **Gateway** | a background service, started and enabled on login |
 
 Every step is checked, and the whole Bot is rolled back if one fails.
+
+## Expert harnesses
+
+A Bot built the normal way inherits your whole skill library and switches most of it off
+by category. That produces a generalist wearing a specialist's name — it can be handed a
+trading task, an App Store submission, or a Postgres migration, and it has a mediocre skill
+for all three.
+
+A **harness** replaces that with a curated, verified skill set. You name the domain; the
+plugin installs what the domain needs, checks that every skill actually resolved, and
+disables everything else — including shared and OMH skills, so the result is genuinely
+sharp rather than broadly general.
+
+| | Inherited (default) | Harness |
+|---|---|---|
+| Skills the Bot carries | your whole library, most of it on | only the allowlist, plus `hermes-agent` |
+| Trading Bot also carries | 137 OMH skills, a dozen social ones | nothing you didn't ask for |
+| If a skill can't be found | Bot built anyway, quietly weaker | **`gaps` reported, never silent** |
+
+**A verified iOS Bot carries 37 skills** out of 296 available — and still knows to ask
+before it touches the App Store or a signing identity.
+
+### Use one
+
+```bash
+# what expert bots can I make?
+hermes plugins install BkashJEE/hermes-bot-forge
+```
+
+Any agent can do it in one call:
+
+```
+create_agent(
+  name="sable",
+  role="Native iOS Engineer",
+  harness="ios",              # a curated, verified skill set
+)
+```
+
+### Contribute one — it's just JSON
+
+An expert is a manifest, not code. Add `harnesses/<domain>.json` and the community gets a
+new expert Bot:
+
+```json
+{
+  "domain": "trading",
+  "label": "Disciplined swing trading",
+  "summary": "Sizes positions from a written risk plan and refuses to average down.",
+  "skills": ["stocks", "obsidian"],
+  "registry_skills": [{ "query": "trading journal", "category": "finance", "optional": true }],
+  "toolsets": ["file", "web"],
+  "approvals": ["Any order placement", "Any real-money account action"]
+}
+```
+
+No Python, no plugin changes. The process benchmark already guarantees your manifest is
+delivered exactly as written — [the docs](docs/expert-harnesses.md) have the schema and the
+contribution rules. Whether a manifest names the *right* skills for its domain is the one
+judgment a contributor brings.
+
+---
 
 ## Demo
 
