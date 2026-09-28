@@ -147,6 +147,12 @@ def _category_of(skill_md: Path, skills_dir: Path) -> str:
     return rel[0] if len(rel) > 1 else ""
 
 
+# Hermes refuses to disable these whatever a config says: the system prompt points at
+# `hermes-agent` unconditionally, so listing it in `skills.disabled` is a silent no-op.
+# Curating against it would report a disable that never takes effect.
+NEVER_DISABLE = frozenset({"hermes-agent"})
+
+
 # ── curation ─────────────────────────────────────────────────────────────────
 def plan(profile_dir: Path, manifest: dict, cfg: dict | None = None) -> dict:
     """Compute the enable/disable sets for `manifest` against a real profile directory.
@@ -174,12 +180,16 @@ def plan(profile_dir: Path, manifest: dict, cfg: dict | None = None) -> dict:
         else:
             missing.append(name)
 
-    # Only profile-local skills may be disabled. A shared/external skill is disabled elsewhere
-    # (in whatever profile owns it) and is not this profile's to switch off.
-    disabled = {n for n in inv if n not in keep_names | resolved}
+    # Curate across every skill the profile can load, not just its own. `skills.disabled`
+    # is matched by name against all skill directories, so a shared skill left in the list
+    # is exactly the contamination this is meant to remove. (An earlier version treated
+    # external skills as untouchable, which left ~138 irrelevant skills loaded per Bot.)
+    # NEVER_DISABLE is excluded because Hermes ignores a disable for those names anyway.
+    keep = keep_names | resolved
+    disabled = {n for n in all_inv if n not in keep and n not in NEVER_DISABLE}
 
     return {
-        "keep": sorted(keep_names | resolved),
+        "keep": sorted(keep),
         "enable": sorted(resolved),
         "disabled": sorted(disabled),
         "missing": missing,

@@ -156,9 +156,12 @@ def check_domain(profile: Path, manifest: dict, floor: set[str]) -> dict:
     allowed = named | {n for n, p in available.items()
                        if harness._category_of(p, profile / "skills") in cats} | floor
     leaks = sorted(keep - allowed)
-    # external skills are loadable but belong to another profile; never disabled
-    external = {n for n in available if not str(available[n]).startswith(str(profile / "skills"))}
-    disabled_externals = sorted(disabled & external)
+    # Every loadable skill outside the allowlist must be disabled — external ones included,
+    # because `skills.disabled` is matched by name across all skill directories. Anything
+    # still loadable after the plan is contamination the harness failed to remove.
+    still_loadable = sorted((set(available) - set(disabled)) - allowed)
+    # A disable Hermes ignores is worse than none: it looks curated but changes nothing.
+    phantom_disables = sorted(disabled - set(available))
 
     # ── efficiency: a spec that names skills and no categories must keep exactly those
     #    skills plus the floor. Any extra skill is padding the spec did not ask for.
@@ -193,9 +196,10 @@ def check_domain(profile: Path, manifest: dict, floor: set[str]) -> dict:
         "present": len(present),
         "absent": sorted(absent),
         "leaks": leaks,
-        "disabled_externals": disabled_externals,
+        "still_loadable": still_loadable,
+        "phantom_disables": phantom_disables,
         "fidelity": fidelity_ok,
-        "contamination": not leaks and not disabled_externals,
+        "contamination": not leaks and not still_loadable and not phantom_disables,
         "efficiency": efficiency,
         "sharper": sharper,
         "deterministic": deterministic,

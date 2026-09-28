@@ -178,18 +178,24 @@ Two subtleties worth knowing if you read the code:
 
 ### What a curated Bot actually loads
 
-The disable list is not the same as the loaded set, and the difference matters if you are
-measuring the result. On a real install (158 profile-local skills, 138 shared/OMH
-external skills), the `ios` harness disables 124 local skills — leaving 34 local — but all
-138 external skills still load, because they live in another profile's directory and
-mutating that would be rude. So the Bot that answers is carrying roughly 172 skills, not
-34.
+The `ios` harness on a real install (158 profile-local skills, 138 shared/OMH skills)
+enables 36 and disables 260. What the Bot actually carries is the enabled set plus
+`hermes-agent`, which Hermes refuses to disable because the system prompt points at it
+unconditionally — **37 skills, not 36**, and not the ~172 an earlier version shipped.
 
-That is a property of how Hermes composes profiles, not of the curator. The harness gives
-you exact control over the profile's *own* skills; anything reached through
-`external_dirs` is governed by whoever owns that directory. If you want a genuinely
-narrow Bot, either ship a profile with no or few external dirs, or trim the shared roots
-once for all Bots rather than per-profile.
+Two things make this work, and both were wrong in the first implementation:
+
+- `skills.disabled` is matched by name against **every** skill directory, not just the
+  profile's own. Verified on a live profile: disabling a skill that exists only in
+  `~/.omh/skills` really does stop it loading. The first version treated shared skills as
+  untouchable — "not this profile's to disable" — which quietly left 138 irrelevant skills
+  loaded in every Bot. That reasoning was wrong: the disable list is per-profile config, so
+  it affects only the profile that sets it, and the name is simply ignored elsewhere.
+- The shared roots themselves are never modified. The harness only writes this profile's
+  `config.yaml`; it does not touch `~/.omh/skills` or `~/.hermes/shared/skills`. Disabling a
+  name is reversible and scoped to the profile that disables it.
+
+If you *want* a shared skill available to every Bot, name it in the manifest.
 
 ## Testing
 

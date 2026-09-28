@@ -299,11 +299,27 @@ class ExternalDirsTests(unittest.TestCase):
         self.assertEqual(r["missing"], [])
         self.assertIn("grounded-citations", r["enable"])
 
-    def test_shared_skill_is_never_disabled(self):
+    def test_shared_skill_is_disabled_when_the_manifest_does_not_want_it(self):
+        # `skills.disabled` is matched by name against every skill directory, including
+        # external ones, so a shared skill outside the allowlist must be switched off.
+        # Leaving it enabled was a real bug: it loaded ~138 irrelevant skills per Bot.
         r = harness.plan(self.profile, {"skills": ["ios-app-delivery"], "skill_categories": []}, self.cfg())
-        self.assertNotIn("grounded-citations", r["disabled"],
-                         "an external skill is not this profile's to disable")
+        self.assertIn("grounded-citations", r["disabled"],
+                      "an external skill outside the allowlist is still loadable and must be disabled")
         self.assertIn("stocks", r["disabled"], "profile-local off-domain skill is disabled")
+
+    def test_shared_skill_named_in_the_manifest_is_kept(self):
+        r = harness.plan(self.profile, {"skills": ["grounded-citations"], "skill_categories": []}, self.cfg())
+        self.assertNotIn("grounded-citations", r["disabled"])
+        self.assertIn("grounded-citations", r["keep"])
+
+    def test_essential_skill_is_never_disabled(self):
+        # Hermes ignores a disable for `hermes-agent`, so curating against it would
+        # report a disable that silently never takes effect.
+        make_skill(self.profile / "skills", "hermes-agent", "Use when configuring Hermes.")
+        r = harness.plan(self.profile, {"skills": ["ios-app-delivery"], "skill_categories": []}, self.cfg())
+        self.assertNotIn("hermes-agent", r["disabled"])
+        self.assertIn("hermes-agent", harness.NEVER_DISABLE, "the guard must name what it protects")
 
     def test_local_skill_wins_over_external_of_same_name(self):
         make_skill(self.shared, "grounded-citations-override", "ios-app-delivery")

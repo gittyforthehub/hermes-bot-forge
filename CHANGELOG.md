@@ -15,7 +15,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **The bundled `ios` manifest no longer names broad `skill_categories`.** The three-category version kept 25 skills to cover the handful that mattered, because `research` drags in `arxiv` and `llm-wiki` whether or not an iOS engineer needs them. Listing the six skills explicitly cuts the set to 10. Category membership is not expertise; this is now the first design rule in `docs/expert-harnesses.md`.
 
 ### Fixed
-- **A profile's `skills.external_dirs` are loadable, and the curator now knows it.** Shared and OMH skill roots were invisible to skill resolution, so every shared skill was misreported as missing and re-installed for no reason. They now count as available — and, correctly, are never added to the profile's disable list, since they belong to whoever owns them.
+- **A curated Bot now carries what it asked for, not its neighbour's skill library.** The curator only ever disabled *profile-local* skills, on the reasoning that a shared skill (OMH, `~/.hermes/shared/skills`) is "not this profile's to disable". That is wrong: `skills.disabled` is matched by name across every skill directory, so leaving those names out kept ~138 irrelevant skills loaded in every Bot. Verified on a live profile — disabling a skill that exists only in `~/.omh/skills` genuinely stops it loading, and the Bot still names the right iOS skills afterwards. The `ios` harness now enables 36 skills and disables 260, so a real Bot carries 37 including `hermes-agent`, which Hermes never lets you disable. The shared directories themselves are still never written to; only the profile's own config changes.
+- **A profile's `skills.external_dirs` are loadable, and the curator now knows it.** Shared and OMH skill roots were invisible to skill resolution, so every shared skill was misreported as missing and re-installed for no reason. They now count as available.
 
 ## [0.13.0] - 2026-09-28
 

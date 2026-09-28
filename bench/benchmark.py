@@ -66,13 +66,28 @@ ALWAYS_ON = {"file", "web", "browser"}
 
 
 def build_profile(tmp: Path, skills: dict[str, str]) -> Path:
-    """A throwaway profile dir with `skills` = {category/skill-name: skill-name}."""
+    """A throwaway profile dir with `skills` = {category/skill-name: skill-name}.
+
+    Also builds a shared `external_dirs` root holding a handful of root-level skills, so the
+    benchmark exercises the case that a real install always has: skills reachable from another
+    profile's directory. `skills.disabled` is matched by name across all directories, so a
+    harness that only curates profile-local skills leaves the shared ones loaded — a bug this
+    fixture exists to make visible.
+    """
     profile = tmp / "profile"
     for rel, name in skills.items():
         d = profile / "skills" / rel
         d.mkdir(parents=True, exist_ok=True)
         (d / "SKILL.md").write_text(f"---\nname: {name}\ndescription: benchmark fixture\n---\n\nx\n")
-    (profile / "config.yaml").write_text("model:\n  default: m\n")
+    shared = tmp / "shared-skills"
+    shared.mkdir(parents=True, exist_ok=True)
+    for name in ("omh-research-brief", "omh-finance-analysis", "qmd-memory"):
+        (shared / name).mkdir(parents=True, exist_ok=True)
+        (shared / name / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: shared fixture\n---\n\nx\n")
+    (profile / "config.yaml").write_text(
+        "model:\n  default: m\nskills:\n  external_dirs:\n"
+        f"    - {shared}\n")
     return profile
 
 
