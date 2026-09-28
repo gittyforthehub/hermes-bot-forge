@@ -155,8 +155,31 @@ def check_domain(profile: Path, manifest: dict, floor: set[str]) -> dict:
     )
 
     # ── contamination: nothing kept that the spec did not ask for, beyond the floor ──
-    allowed = named | {n for n, p in available.items()
-                       if harness._category_of(p, profile / "skills") in cats} | floor
+    # The expected set is computed here, independently of harness's own category helper.
+    # Reusing the helper under test makes the check agree with whatever the code does —
+    # which is how a bug in that helper passed 46/46 for a whole review cycle. A shared
+    # skill's category is its first segment below ANY skill root, and that is re-derived
+    # from the path rather than by calling the implementation.
+    roots = [profile / "skills", *harness.external_dirs(harness._read_cfg(profile))]
+
+    def category_of(path: Path) -> str:
+        for r in roots:
+            try:
+                rel = path.relative_to(r).parts
+            except ValueError:
+                continue
+            if len(rel) > 1:
+                return rel[0]
+        return ""
+
+    # The floor is re-derived here, not taken from floor_skills(): that helper resolves
+    # against the same code path under test, so it agreed with the bug. The three rules a
+    # skill must satisfy to be exempt from curation, spelled out independently.
+    local_names = {n for n, p in available.items() if str(p).startswith(str(profile / "skills"))}
+    derived_floor = {n for n, p in available.items()
+                     if n in harness.NEVER_DISABLE or n in ALWAYS_ON or category_of(p) in harness.ALWAYS_KEEP}
+
+    allowed = named | {n for n, p in available.items() if category_of(p) in cats} | derived_floor
     leaks = sorted(keep - allowed)
     # Every loadable skill outside the allowlist must be disabled — external ones included,
     # because `skills.disabled` is matched by name across all skill directories. Anything
@@ -164,7 +187,11 @@ def check_domain(profile: Path, manifest: dict, floor: set[str]) -> dict:
     still_loadable = sorted((set(available) - set(disabled)) - allowed)
     # A disable Hermes ignores is worse than none: it looks curated but changes nothing.
     phantom_disables = sorted(disabled - set(available))
-
+    # ALWAYS_KEEP is unconditional: a skill in one of those categories is never disabled,
+    # from ANY root. Asserted as a floor invariant rather than a category check, because a
+    # per-manifest check only covers it when the manifest happens to name such a category.
+    always_keep_members = {n for n, p in available.items() if category_of(p) in harness.ALWAYS_KEEP}
+    floor_violations = sorted(always_keep_members & disabled)
     # ── efficiency: a spec that names skills and no categories must keep exactly those
     #    skills plus the floor. Any extra skill is padding the spec did not ask for.
     #    Broader specs are not measured here: naming categories legitimately adds skills.
@@ -172,11 +199,11 @@ def check_domain(profile: Path, manifest: dict, floor: set[str]) -> dict:
     #    profile cannot be kept, and reporting it as a gap is the correct behaviour
     #    (fidelity covers that). Judging efficiency on it would punish the honest path.
     exact = bool(named) and not cats
-    expected = present | floor
-    efficiency = (not exact) or (keep | floor) == expected
+    expected = present | derived_floor
+    efficiency = (not exact) or (keep | derived_floor) == expected
 
-    stock = stock_keep(profile, manifest, floor)
-    keep_with_floor = keep | floor
+    stock = stock_keep(profile, manifest, derived_floor)
+    keep_with_floor = keep | derived_floor
     focused = bool(named) and len(cats) <= 2
     sharper = (not focused) or len(keep_with_floor) < len(stock)
 
@@ -200,8 +227,9 @@ def check_domain(profile: Path, manifest: dict, floor: set[str]) -> dict:
         "leaks": leaks,
         "still_loadable": still_loadable,
         "phantom_disables": phantom_disables,
+        "floor_violations": floor_violations,
         "fidelity": fidelity_ok,
-        "contamination": not leaks and not still_loadable and not phantom_disables,
+        "contamination": not leaks and not still_loadable and not phantom_disables and not floor_violations,
         "efficiency": efficiency,
         "sharper": sharper,
         "deterministic": deterministic,

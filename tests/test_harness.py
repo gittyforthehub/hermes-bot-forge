@@ -49,6 +49,60 @@ class HarnessInventoryTests(unittest.TestCase):
         self.assertEqual(harness.inventory(self.profile / "nope"), {})
 
 
+class AlwaysKeepAcrossRootsTests(unittest.TestCase):
+    """ALWAYS_KEEP must protect a skill no matter which root it lives in.
+
+    A shared `external_dirs` root is a full skill tree, so a research or web skill can live
+    there. Resolving categories only against the profile's own `skills/` made every external
+    skill look category-less, and the disable pass then switched off exactly what ALWAYS_KEEP
+    promises to protect. The benchmark fixture could not see it either: its shared skills sat
+    at root level, and its expected set came from the same helper that was wrong.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.profile = Path(self.tmp.name)
+        make_skill(self.profile / "skills", "software-development/ios-app-delivery", "ios-app-delivery")
+        self.shared = self.profile.parent / "shared"
+        for rel, name in (("research/omh-web-research", "omh-web-research"),
+                          ("autonomous-ai-agents/claude-code", "claude-code"),
+                          ("operator/omh-plan", "omh-plan"),
+                          ("qmd-memory", "qmd-memory")):
+            make_skill(self.shared, rel, name)
+        self.cfg = {"skills": {"external_dirs": [str(self.shared)]}}
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_external_always_keep_members_are_never_disabled(self):
+        r = harness.plan(self.profile, {"skills": ["ios-app-delivery"], "skill_categories": []}, self.cfg)
+        for name in ("omh-web-research", "claude-code"):
+            self.assertIn(name, r["keep"], f"{name} is in an ALWAYS_KEEP category and lives outside the profile")
+            self.assertNotIn(name, r["disabled"])
+
+    def test_off_allowlist_external_skills_are_still_disabled(self):
+        # The fix must not invert the other direction: curation still reaches externals.
+        r = harness.plan(self.profile, {"skills": ["ios-app-delivery"], "skill_categories": []}, self.cfg)
+        self.assertIn("omh-plan", r["disabled"], "a non-floor external skill is still contamination")
+
+    def test_category_resolves_for_every_root(self):
+        roots = [self.profile / "skills", self.shared]
+        self.assertEqual(
+            harness._category_of(self.shared / "research/omh-web-research/SKILL.md", roots), "research")
+        # A root-level shared skill resolves to its own name, not to "": rel[0] is the
+        # skill's own directory when there is no category folder above it. That is why
+        # root-level shared fixtures never exercised ALWAYS_KEEP — a bare skill name is
+        # never one of the floor categories.
+        self.assertEqual(
+            harness._category_of(self.shared / "qmd-memory/qmd-memory/SKILL.md", roots), "qmd-memory")
+        (self.shared / "loose-skill").mkdir(parents=True, exist_ok=True)
+        loose = self.shared / "loose-skill" / "SKILL.md"
+        loose.write_text("---\nname: loose-skill\ndescription: d\n---\n\nx\n")
+        self.assertEqual(harness._category_of(loose, roots), "loose-skill")
+        # A path outside every root has no category at all — the only true "" case.
+        self.assertEqual(harness._category_of(Path("/elsewhere/x/SKILL.md"), roots), "")
+
+
 class MalformedManifestTests(unittest.TestCase):
     """Manifests are community-authored JSON, so a typo must not raise.
 

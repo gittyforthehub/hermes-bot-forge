@@ -81,10 +81,23 @@ def build_profile(tmp: Path, skills: dict[str, str]) -> Path:
         (d / "SKILL.md").write_text(f"---\nname: {name}\ndescription: benchmark fixture\n---\n\nx\n")
     shared = tmp / "shared-skills"
     shared.mkdir(parents=True, exist_ok=True)
-    for name in ("omh-research-brief", "omh-finance-analysis", "qmd-memory"):
-        (shared / name).mkdir(parents=True, exist_ok=True)
-        (shared / name / "SKILL.md").write_text(
-            f"---\nname: {name}\ndescription: shared fixture\n---\n\nx\n")
+    # Deliberately category-nested, not root-level: a real shared root is a full skill
+    # tree. Root-level fixtures make `_category_of` return "" for every shared skill, which
+    # hides the case where an ALWAYS_KEEP member lives outside the profile and gets disabled.
+    # Names are deliberately NOT ones the profile also has: inventory lets the profile-local
+    # copy win a collision, so a duplicate name here would silently leave no external member
+    # of an ALWAYS_KEEP category and the case would go untested.
+    for rel, name in (("research/shared-omh-web-research", "shared-omh-web-research"),
+                      ("research/shared-llm-wiki", "shared-llm-wiki"),
+                      ("autonomous-ai-agents/shared-claude-code", "shared-claude-code"),
+                      ("operator/shared-omh-plan", "shared-omh-plan")):
+        d = shared / rel
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "SKILL.md").write_text(f"---\nname: {name}\ndescription: shared fixture\n---\n\nx\n")
+    # one genuinely root-level shared skill, so both shapes are covered
+    (shared / "qmd-memory").mkdir(parents=True, exist_ok=True)
+    (shared / "qmd-memory" / "SKILL.md").write_text(
+        "---\nname: qmd-memory\ndescription: shared fixture\n---\n\nx\n")
     (profile / "config.yaml").write_text(
         "model:\n  default: m\nskills:\n  external_dirs:\n"
         f"    - {shared}\n")

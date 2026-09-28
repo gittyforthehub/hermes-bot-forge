@@ -117,34 +117,51 @@ def external_dirs(cfg: dict) -> list[Path]:
     return [Path(str(d)).expanduser() for d in dirs if d]
 
 
+def _read_cfg(profile_dir: Path, cfg: dict | None = None) -> dict:
+    """The profile config, from the caller, the file on disk, or an empty dict."""
+    if cfg is not None:
+        return cfg
+    cfg_path = profile_dir / "config.yaml"
+    if not cfg_path.exists():
+        return {}
+    try:
+        import yaml  # local import: only needed when reading a real config
+        loaded = yaml.safe_load(cfg_path.read_text())
+    except Exception:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
 def inventory_with_externals(profile_dir: Path, cfg: dict | None = None) -> dict[str, Path]:
     """Full inventory for a profile: its own skills/ plus any configured external_dirs.
 
     Own skills win on a name collision — they are the profile-local override.
     """
     out: dict[str, Path] = {}
-    if cfg is None:
-        cfg_path = profile_dir / "config.yaml"
-        cfg = {}
-        if cfg_path.exists():
-            try:
-                import yaml  # local import: only needed when reading a real config
-                loaded = yaml.safe_load(cfg_path.read_text())
-                cfg = loaded if isinstance(loaded, dict) else {}
-            except Exception:
-                cfg = {}
+    cfg = _read_cfg(profile_dir, cfg)
     for d in external_dirs(cfg):
         out.update(inventory(d))   # externals first, so local ones override below
     out.update(inventory(profile_dir / "skills"))
     return out
 
 
-def _category_of(skill_md: Path, skills_dir: Path) -> str:
-    try:
-        rel = skill_md.relative_to(skills_dir).parts
-    except ValueError:
-        return ""
-    return rel[0] if len(rel) > 1 else ""
+def _category_of(skill_md: Path, roots: list[Path]) -> str:
+    """The category a skill sits in, resolved against whichever root contains it.
+
+    A skill's category is its first path segment below a *skill root* — a profile's own
+    `skills/`, or any `external_dirs` root. Resolving only against the profile-local dir
+    made every external skill look like it had no category, so an `ALWAYS_KEEP` member
+    living in a shared root was disabled while the same skill in the profile's own
+    `research/` folder was kept. The two sides have to be measured the same way.
+    """
+    for root in roots:
+        try:
+            rel = skill_md.relative_to(root).parts
+        except ValueError:
+            continue
+        if len(rel) > 1:
+            return rel[0]
+    return ""
 
 
 # Hermes refuses to disable these whatever a config says: the system prompt points at
@@ -186,8 +203,11 @@ def plan(profile_dir: Path, manifest: dict, cfg: dict | None = None) -> dict:
     categories |= ALWAYS_KEEP
 
     keep_names: set[str] = set()
+    # Every skill root the profile loads from, so a shared skill's category resolves the
+    # same way a profile-local one does.
+    roots = [skills_dir, *external_dirs(_read_cfg(profile_dir, cfg))]
     for name, skill_md in all_inv.items():
-        if _category_of(skill_md, skills_dir) in categories:
+        if _category_of(skill_md, roots) in categories:
             keep_names.add(name)
 
     resolved, missing = set(), []
