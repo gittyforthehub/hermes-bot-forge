@@ -66,6 +66,11 @@ def load_manifest(domain: str, root: Path | None = None) -> dict | None:
         path = Path(root) / "harnesses" / path.name
     if not path.exists():
         return None
+    # The contributor template is a starting point, not a domain. Enumerating it is
+    # excluded in available_domains(), but a direct load would still succeed on a
+    # case-insensitive filesystem, so the guard has to be here too.
+    if path.stem.lower() == "template":
+        return None
     try:
         data = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
@@ -77,10 +82,21 @@ def load_manifest(domain: str, root: Path | None = None) -> dict | None:
 
 
 def available_domains() -> list[str]:
-    """Every domain key with a bundled manifest, sorted."""
+    """Every domain key with a bundled manifest, sorted.
+
+    `TEMPLATE.json` is a copyable starting point for contributors, not a domain — it is
+    excluded here so it can never be resolved as one.
+
+    Keys are normalised to lower case because `manifest_path` lower-cases too; without
+    that, an upper-case filename resolves on a case-insensitive filesystem (macOS) and
+    silently fails on Linux. CI is the only place that difference shows up.
+    """
     if not HARNESS_DIR.is_dir():
         return []
-    return sorted(p.stem for p in HARNESS_DIR.glob("*.json"))
+    return sorted({
+        p.stem.lower() for p in HARNESS_DIR.glob("*.json")
+        if p.stem.lower() != "template"
+    })
 
 
 # ── skill inventory ──────────────────────────────────────────────────────────

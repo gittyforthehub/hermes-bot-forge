@@ -255,7 +255,26 @@ class ManifestTests(unittest.TestCase):
     def test_every_bundled_manifest_has_a_summary(self):
         for key in harness.available_domains():
             m = harness.load_manifest(key)
+            self.assertIsNotNone(m, f"{key} is listed as a domain but does not load")
             self.assertTrue(m.get("summary"), f"{key} manifest needs a summary")
+
+    def test_every_listed_domain_actually_resolves(self):
+        """Every key from available_domains() must load, on any filesystem.
+
+        Regression: keys were enumerated with their on-disk case but `manifest_path`
+        lower-cases, so an upper-case filename resolved on macOS and returned None on
+        Linux. The mismatch only ever showed up in CI.
+        """
+        for key in harness.available_domains():
+            self.assertEqual(key, key.lower(), f"{key} must be listed lower-case")
+            self.assertIsNotNone(harness.load_manifest(key),
+                                 f"{key} is listed but manifest_path() cannot find it")
+
+    def test_template_is_not_a_domain(self):
+        """TEMPLATE.json is a contributor starting point, never a resolvable domain."""
+        self.assertNotIn("TEMPLATE", harness.available_domains())
+        self.assertNotIn("template", harness.available_domains())
+        self.assertIsNone(harness.load_manifest("TEMPLATE"))
 
 
 class RegistryParseTests(unittest.TestCase):
