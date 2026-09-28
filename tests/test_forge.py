@@ -429,6 +429,39 @@ class HarnessInstallSettingTests(unittest.TestCase):
                       "harness_install=False must reach forge at runtime")
 
 
+class BundledManifestTests(unittest.TestCase):
+    """Every manifest in harnesses/ must pass the validator CI runs.
+
+    A community contribution is JSON, so a typo in one should fail a build rather than
+    surface later as a Bot that quietly carries no skills. TEMPLATE.json is the copy-me
+    starting point and is deliberately full of `$comment` keys, so it is exempt.
+    """
+
+    def _validate(self, path):
+        sys.path.insert(0, str(ROOT / "bench"))
+        import validate_manifest
+        return validate_manifest.validate(path)
+
+    def test_shipped_manifests_are_valid(self):
+        import harness as harness_mod
+        domains = harness_mod.available_domains()
+        self.assertTrue(domains, "at least one harness must ship")
+        for d in domains:
+            p = ROOT / "harnesses" / f"{d}.json"
+            self.assertTrue(p.exists(), f"{d} is listed but has no manifest file")
+            errors, _notes = self._validate(p)
+            self.assertEqual(errors, [], f"{p.name} is invalid: {errors}")
+
+    def test_template_parses_and_names_no_domain(self):
+        # The template is copied, not loaded, so it is exempt from the "names a domain"
+        # rule — but it must still be valid JSON a contributor can fill in.
+        import json
+        t = ROOT / "harnesses" / "TEMPLATE.json"
+        data = json.loads(t.read_text())
+        self.assertIn("skills", data)
+        self.assertIn("approvals", data, "the template must show the documented approvals form")
+
+
 class ForgeValidation(unittest.TestCase):
     def test_missing_role_fails_before_touching_disk(self):
         with tempfile.TemporaryDirectory() as t:

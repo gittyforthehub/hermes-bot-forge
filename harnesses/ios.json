@@ -35,14 +35,14 @@
       "optional": true
     }
   ],
+  "approvals": [
+    "archiving, submitting, or releasing anything to App Store Connect or TestFlight",
+    "any paid service, signing identity, provisioning profile, or App Store Connect API key",
+    "running anything on a physical device that touches Family Controls, Screen Time, HealthKit, camera, push, or location permissions",
+    "deleting branches, resetting git, wiping DerivedData, or removing untracked work",
+    "adding a third-party dependency to a project"
+  ],
   "defaults": {
-    "sandbox": "local",
-    "approvals": [
-      "archiving, submitting, or releasing anything to App Store Connect or TestFlight",
-      "any paid service, signing identity, provisioning profile, or App Store Connect API key",
-      "running anything on a physical device that touches Family Controls, Screen Time, HealthKit, camera, push, or location permissions",
-      "deleting branches, resetting git, wiping DerivedData, or removing untracked work",
-      "adding a third-party dependency to a project"
-    ]
+    "sandbox": "local"
   }
 }

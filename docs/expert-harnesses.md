@@ -215,7 +215,20 @@ tests stub profile creation, so everything runs offline in seconds.
 
 ## Contributing a manifest
 
-Add `harnesses/<domain>.json` and a test asserting it loads and has a summary. The
-manifest is the whole contribution — no code required. The process benchmark already
-guarantees the pipeline delivers any manifest faithfully; whether the manifest names the
-*right* skills for the domain is the judgment a contributor brings.
+Copy `harnesses/TEMPLATE.json` to `harnesses/<domain>.json` and fill it in. The manifest is
+the whole contribution — no code required.
+
+```bash
+python3 bench/validate_manifest.py harnesses/<domain>.json   # CI runs this for you
+```
+
+The validator catches the mistakes that otherwise fail quietly at build time: a manifest
+naming no skills, an `approvals` list that is not a list of strings, a `registry_skills`
+entry with no `query` or `identifier`, a `domain` that disagrees with the filename. It
+cannot check whether you named the *right* skills — that is the judgment a contributor
+brings, and no script can make it.
+
+The process benchmark already guarantees the pipeline delivers any manifest faithfully, so
+once the validator is green your manifest works. Note that registry `query` results are
+noisy — a search for `marketing` returns ad-tech landing pages. Prefer an explicit
+`identifier` when you know it, and mark loose queries `optional`.

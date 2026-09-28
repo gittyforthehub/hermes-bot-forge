@@ -98,10 +98,13 @@ new expert Bot:
 curated to nothing. `approvals` go at the top level, exactly as above, and are written into
 the Bot's SOUL.md as hard checkpoints.
 
-No Python, no plugin changes. The process benchmark already guarantees your manifest is
-delivered exactly as written — [the docs](docs/expert-harnesses.md) have the schema and the
-contribution rules. Whether a manifest names the *right* skills for its domain is the one
-judgment a contributor brings.
+No Python, no plugin changes. Copy [`harnesses/TEMPLATE.json`](harnesses/TEMPLATE.json),
+and check your work with `python3 bench/validate_manifest.py harnesses/<domain>.json` —
+CI runs it for every bundled manifest, so a typo there fails a build instead of quietly
+producing a Bot with no skills. The process benchmark already guarantees your manifest is
+delivered exactly as written — [the docs](docs/expert-harnesses.md) have the full schema and
+the contribution rules. Whether a manifest names the *right* skills for its domain is the
+one judgment a contributor brings, and no script can make it.
 
 ---
 

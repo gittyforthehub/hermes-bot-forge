@@ -34,3 +34,7 @@ jobs:
         run: python bench/benchmark.py
       - name: Check the plugin manifest parses
         run: python -c "import yaml,sys; m=yaml.safe_load(open('plugin.yaml')); sys.exit(0 if m['name']=='bot-forge' and m['provides_tools'] else 1)"
+      - name: Validate every bundled harness manifest
+        # A community contribution is JSON. A typo there should fail a build, not surface
+        # later as a Bot that quietly carries no skills.
+        run: python bench/validate_manifest.py harnesses/

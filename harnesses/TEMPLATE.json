@@ -1,0 +1,32 @@
+{
+  "$comment": "Copy this to harnesses/<domain>.json and fill it in. Every key is optional except 'skills' (or 'skill_categories') — a manifest naming neither is rejected rather than silently curating to nothing. Run: python3 bench/validate_manifest.py harnesses/<domain>.json",
+
+  "version": 1,
+  "domain": "example-domain",
+  "label": "What this Bot is, in one line",
+  "summary": "Two sentences on how it works and what it refuses to do. Shown to the user before the Bot is built.",
+
+  "$comment_skills": "Name skills EXPLICITLY. A broad category pulls in everything under it — the 'research' category drags in arxiv and llm-wiki whether or not an expert needs them. Category membership is not expertise.",
+  "skills": [
+    "a-skill-that-exists",
+    "another-skill-that-exists"
+  ],
+  "skill_categories": [],
+
+  "$comment_registry": "Optional. Pull a skill from the Hermes registries. `query` is a search string; `optional: true` means an unresolved entry is reported but does not count as a gap. Prefer a direct `identifier` when you know it — search results are noisy, and a bad query resolves to whatever merely shares a keyword.",
+  "registry_skills": [
+    { "query": "example topic", "category": "example-category", "optional": true }
+  ],
+
+  "toolsets": ["file", "web"],
+
+  "$comment_approvals": "Top level, exactly here. These become hard checkpoints in the Bot's SOUL.md: it must ask before doing any of them. This is the most important field for anything touching money, credentials, signing, publishing, or deletion.",
+  "approvals": [
+    "Anything that spends money",
+    "Anything that publishes or sends to a real person"
+  ],
+
+  "defaults": {
+    "sandbox": "local"
+  }
+}
