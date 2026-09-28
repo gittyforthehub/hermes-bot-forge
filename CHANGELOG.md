@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-09-28
+
+### Added
+- **Shared operating policy: write a rule once, every Bot picks it up.** The rules that apply to every Bot — spend nothing without asking, never paste a secret, report what you didn't check — used to be pasted into each `SOUL.md` individually, so a rebuilt or copied Bot silently lost them. They now live in one file, `~/.hermes/shared/BOT-POLICY.md`, which `create_agent` inlines into each Bot's `SOUL.md` inside fenced markers. A starter policy is written on first use.
+- **`check_policies` (read-only) makes drift visible.** It fingerprints each Bot's inlined block against the canonical file and returns `stale` (built before your latest edit), `no_shared_policy` (opted out, or predates this feature), and a per-Bot reason. A Bot rebuilds into currency; nothing is auto-rewritten behind your back. Opt out per Bot with `"shared_policy": false`.
+- Design note and tests in [`docs/shared-policy.md`](docs/shared-policy.md): the mechanism borrows the *discipline* from [steipete/agent-scripts](https://github.com/steipete/agent-scripts) but deliberately not its symlink, because a whole-file symlink would give every Bot the same identity and a pointer line would put the policy outside the system prompt. Both rejected alternatives are asserted broken by tests rather than merely disfavoured.
+- `bench/policy_mutation_check.py` reverts each of six load-bearing policy decisions and requires the suite to catch every one, in CI. A drift detector that cannot fail is not a detector.
+
+### Fixed
+- A comment-only edit to the policy file no longer marks every Bot stale. Removing a comment left the blank line it sat on behind, so annotating the file looked like changing a rule. Found by the end-to-end check, not by inspection; the fingerprint now strips whole-line comments, unwraps inline ones, and collapses blank-line runs.
+
 ## [0.14.0] - 2026-09-28
 
 ### Added

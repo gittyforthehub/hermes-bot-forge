@@ -166,6 +166,54 @@ def check_agents(args: dict, **kwargs) -> str:
         return json.dumps({"ok": False, "error": _clean(p.stderr or out)[-1500:]})
 
 
+def check_policies(args: dict, **kwargs) -> str:
+    """Report which Bots' shared operating policy is current, and which have drifted."""
+    try:
+        import policy as policy_mod
+    except ImportError as exc:
+        return json.dumps({"ok": False, "error": f"policy module unavailable: {exc}"})
+    root = hermes_root()
+    relative = (args or {}).get("policy_path") or policy_mod.DEFAULT_RELATIVE
+    canon = policy_mod.policy_path(root, relative)
+
+    if not canon.exists():
+        return json.dumps({"ok": False, "error": f"no shared policy at {canon}",
+                          "hint": "create_agent writes one on first use; or create it yourself"})
+    try:
+        expected = policy_mod.fingerprint(canon.read_text())
+    except OSError as exc:
+        return json.dumps({"ok": False, "error": f"could not read {canon}: {exc}"})
+
+    bots, stale, without = [], [], []
+    profiles_dir = root / "profiles"
+    for prof in sorted(profiles_dir.glob("*")) if profiles_dir.is_dir() else []:
+        soul = prof / "SOUL.md"
+        if not soul.exists():
+            continue
+        try:
+            text = soul.read_text()
+        except OSError as exc:
+            bots.append({"profile": prof.name, "error": str(exc)[:120]})
+            continue
+        report = policy_mod.audit_soul(text, expected)
+        report["profile"] = prof.name
+        bots.append(report)
+        if not report["current"]:
+            (without if not report["has_shared_policy"] else stale).append(prof.name)
+
+    return json.dumps({
+        "ok": True,
+        "canonical_policy": str(canon),
+        "canonical_fingerprint": expected,
+        "bots_checked": len(bots),
+        "current": len(bots) - len(stale) - len(without),
+        "stale": stale,
+        "no_shared_policy": without,
+        "bots": bots,
+        "fix": "re-run create_agent for a stale Bot, or delete the old block from its SOUL.md",
+    })
+
+
 def agent_journal(args: dict, settings: dict | None = None, **kwargs) -> str:
     """Enable, append to, or read a Bot's work journal."""
     root = hermes_root()

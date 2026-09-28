@@ -554,6 +554,39 @@ def forge(s: dict) -> dict:
     s.setdefault("one_job", f"acts as the user's {s['role']}")
     description = s.get("description") or f"{s['role']}: {s['one_job']}."
     soul = ensure_identity(s.get("soul_md") or render_soul(s, profile_id), display, s["role"], profile_id)
+    # Shared operating policy. Inlined (not symlinked) so the text is genuinely in the
+    # system prompt and the Bot keeps its own unique identity — see policy.py for why the
+    # symlink variant is opt-in rather than default. Injected last so it is idempotent
+    # across a rebuild and a `--no-shared-policy` Bot is genuinely left alone.
+    shared_policy = None
+    if s.get("shared_policy", True):
+        import policy as policy_mod
+
+        pol = policy_mod.policy_path(root, s.get("shared_policy_path"))
+        if not pol.exists():
+            if not s.get("shared_policy_create", True):
+                return {"ok": False, "error": f"shared policy not found: {pol}", "rolled_back": False}
+            try:
+                pol.parent.mkdir(parents=True, exist_ok=True)
+                pol.write_text(policy_mod.STARTER_POLICY)
+            except OSError as exc:
+                # A Bot that cannot be given the shared floor is not silently built without it.
+                return {"ok": False, "error": f"could not write shared policy {pol}: {exc}"[:200],
+                        "rolled_back": False}
+        try:
+            text = pol.read_text()
+        except OSError as exc:
+            return {"ok": False, "error": f"could not read shared policy {pol}: {exc}"[:200],
+                    "rolled_back": False}
+        if not text.strip():
+            return {"ok": False, "error": f"shared policy is empty: {pol}", "rolled_back": False}
+        soul = policy_mod.inject(text, soul)
+        shared_policy = {"path": str(pol), "fingerprint": policy_mod.fingerprint(text)}
+    if shared_policy:
+        # NOTE: deliberately NOT `s["shared_policy"]` — that key is the user's on/off flag and
+        # is re-read at the top of this block; overwriting it with the report dict would make a
+        # rebuilt spec carry a truthy dict where a bool is expected.
+        s["shared_policy_applied"] = shared_policy
     sandbox = (s.get("sandbox") or "local").strip().lower()
     problem = sandbox_error(sandbox)
     if problem:

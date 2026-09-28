@@ -335,6 +335,27 @@ TEACH_AGENT = {
 }
 
 
+CHECK_POLICIES = {
+    "name": "check_policies",
+    "description": (
+        "Check whether each Bot's shared operating policy is current — read-only. Bot Forge writes the "
+        "canonical policy to ~/.hermes/shared/BOT-POLICY.md and inlines it into every Bot's SOUL.md, so a rule "
+        "you edit once applies everywhere on the next build. Returns each Bot's fingerprint, which Bots are "
+        "stale (built before your latest edit), and which have no shared policy at all. Use after editing the "
+        "policy file, to find out which Bots need rebuilding — report the stale names and offer to rebuild them, "
+        "don't rebuild without asking."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "policy_path": {
+                "type": "string",
+                "description": "optional: policy path relative to the Hermes root (default shared/BOT-POLICY.md)",
+            }
+        },
+    },
+}
+
 CHECK_AGENTS = {
     "name": "check_agents",
     "description": (

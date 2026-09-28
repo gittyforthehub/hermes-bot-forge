@@ -30,6 +30,9 @@ def register(ctx):
                       description="Check that Bot Forge itself is set up correctly (read-only)")
     ctx.register_tool(name="check_agents", toolset="bot_forge", schema=schemas.CHECK_AGENTS,
                       handler=tools.check_agents, emoji="🩺", description="Health check for all Bots (read-only)")
+    ctx.register_tool(name="check_policies", toolset="bot_forge", schema=schemas.CHECK_POLICIES,
+                      handler=tools.check_policies, emoji="📜",
+                      description="Report shared-policy drift across Bots (read-only)")
     ctx.register_tool(name="agent_journal", toolset="bot_forge", schema=schemas.AGENT_JOURNAL,
                       handler=tools.agent_journal, emoji="📓",
                       description="Enable, write, or read a Bot's factual work journal")

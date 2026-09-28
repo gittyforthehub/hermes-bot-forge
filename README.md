@@ -37,6 +37,27 @@ Bot Forge is a [Hermes Agent](https://github.com/NousResearch/hermes-agent) plug
 
 Every step is checked, and the whole Bot is rolled back if one fails.
 
+## Shared operating policy
+
+One file — `~/.hermes/shared/BOT-POLICY.md` — holds the rules that apply to **every** Bot:
+spend nothing without asking, never paste a secret, report what you didn't check.
+`create_agent` inlines it into each Bot's `SOUL.md`, so **one edit reaches every Bot on the
+next build** instead of being pasted into N copies that drift apart.
+
+```bash
+$EDITOR ~/.hermes/shared/BOT-POLICY.md   # edit once
+check_policies                            # → which Bots are now stale
+```
+
+`check_policies` reports `stale` (built before your edit) and `no_shared_policy` (opted out),
+read-only. A Bot can opt out with `"shared_policy": false` in its spec.
+
+This borrows the *discipline* from [steipete/agent-scripts](https://github.com/steipete/agent-scripts)
+— one canonical file, change once — but not its symlink mechanism, because a symlinked
+`SOUL.md` would give every Bot the same identity, and a pointer line would put the policy
+outside the system prompt. The reasoning, and the tests that hold it, are in
+[docs/shared-policy.md](docs/shared-policy.md).
+
 ## Expert harnesses
 
 A Bot built the normal way inherits your whole skill library and switches most of it off

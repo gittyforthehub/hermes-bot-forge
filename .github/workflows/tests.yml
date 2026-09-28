@@ -38,3 +38,7 @@ jobs:
         # A community contribution is JSON. A typo there should fail a build, not surface
         # later as a Bot that quietly carries no skills.
         run: python bench/validate_manifest.py harnesses/
+      - name: Shared-policy mutation check
+        # The drift detector is only useful if it fails when drift exists. Each mutation
+        # reverts one load-bearing decision in policy.py; every one must be caught.
+        run: python bench/policy_mutation_check.py
