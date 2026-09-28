@@ -348,8 +348,135 @@ class SharedPolicyPathSafetyTests(unittest.TestCase):
         # and it must be visible in some list, not vanish
         self.assertTrue(out["unreadable"])
 
-    def test_default_profile_is_audited(self):
-        """The default profile's SOUL.md is at the root, not under profiles/."""
+    def test_nested_and_flat_bullets_are_different_policies(self):
+        """Regression: the F7 fix flattened indentation, so structure stopped mattering.
+
+        Normalising `  - sub` to `- sub` made a nested rule hash identically to a flat one.
+        Five of six distinct-policy pairs collided. That is the worst possible failure for a
+        drift detector: a real change to the policy's structure reporting as no drift, and
+        doing it silently. It was introduced while fixing a purely cosmetic false positive.
+
+        A test that only checked "uniform indent is cosmetic" would have passed here, because
+        a list indented under its heading and a list with a sub-bullet were being conflated.
+        Both properties have to hold at once.
+        """
+        flat = "- Ask before spending.\n- Or over $100.\n- Ask before publishing.\n"
+        nested = "- Ask before spending.\n  - Or over $100.\n- Ask before publishing.\n"
+        self.assertNotEqual(policy.fingerprint(flat), policy.fingerprint(nested),
+                            "a sub-bullet must not hash as a sibling rule")
+
+        # structural edits, each of which must be visible
+        for label, before, after in (
+            ("sub-bullet added", "- A.\n- B.", "- A.\n  - sub\n- B."),
+            ("sub-bullet removed", "- A.\n  - sub\n- B.", "- A.\n- B."),
+            ("reparented", "- A.\n  - sub", "- A.\n- B.\n  - sub"),
+            ("depth changed", "- R.\n    - a\n        - b", "- R.\n    - a\n      - b"),
+        ):
+            with self.subTest(edit=label):
+                self.assertNotEqual(policy.fingerprint(before), policy.fingerprint(after),
+                                    f"{label} must read as drift")
+
+        # and the cosmetic cases the original fix was for must still hold
+        self.assertEqual(policy.fingerprint("## R\n\n- a\n- b"),
+                         policy.fingerprint("## R\n\n  - a\n  - b"),
+                         "a list indented under its heading is the same list")
+        self.assertEqual(policy.fingerprint("## R\n\n- a\n- b"),
+                         policy.fingerprint("## R\n\n\t- a\n\t- b"),
+                         "tabs and spaces are the same indent")
+        self.assertEqual(policy.fingerprint("1. a\n2. b"),
+                         policy.fingerprint("1) a\n2) b"),
+                         "a numbered list's marker style is cosmetic")
+        self.assertNotEqual(policy.fingerprint("1. a\n2. b"),
+                            policy.fingerprint("1. a\n2. c"),
+                            "renumbering the text is a real change")
+        self.assertNotEqual(policy.fingerprint("1. a\n  1. sub"),
+                            policy.fingerprint("1. a\n1. sub"),
+                            "a numbered sub-list must keep its depth, like a bulleted one")
+
+    def test_health_does_not_flag_a_bot_for_its_policy_block(self):
+        """Regression: health read the raw SOUL, so a policy hid the Bot's own name.
+
+        `health` checked the first 400 characters for the Bot's title. The policy block is
+        ~2000 characters and is injected above the persona, so the name fell outside the
+        window -- flagging two identical healthy personas as broken, one only because it
+        carried a policy. Asserted through `health` itself, not through the helper, so the
+        guard cannot be bypassed by re-pointing the accessor.
+        """
+        import health
+        import time
+        with tempfile.TemporaryDirectory() as t:
+            root = Path(t) / "hr"
+            pdir = root / "profiles" / "handwritten"
+            pdir.mkdir(parents=True)
+            persona = ("# Handwritten Bot\n\n## Your one job\n\nDo the thing.\n\n"
+                       "## Ask first\n\n- ask before spending\n")
+            with_p = policy.inject(policy.STARTER_POLICY, persona)
+            self.assertNotIn("Handwritten Bot", with_p[:400],
+                             "precondition: the name IS pushed past the window")
+
+            (pdir / "config.yaml").write_text(
+                "model:\n  default: x\ntools:\n  backend: ''\napprovals:\n  mode: ''\n")
+            (pdir / "routines.json").write_text("[]\n")
+            now = time.time()
+
+            def name_flag(text: str) -> list:
+                (pdir / "SOUL.md").write_text(text)
+                flags = health.check_bot(pdir, {}, now).get("flags", [])
+                return [f for f in flags if "own name" in f]
+
+            without = name_flag(persona)
+            with_policy = name_flag(with_p)
+
+        self.assertEqual(without, [],
+                         f"a healthy persona should not be flagged: {without}")
+        self.assertEqual(without, with_policy,
+                         "carrying a policy must not change the health verdict")
+
+    def test_unreadable_row_carries_both_fingerprints(self):
+        """Regression: error rows omitted keys `audit_soul` always returns.
+
+        docs/shared-policy.md says each entry in `bots` carries both fingerprints; a caller
+        reading `row["fingerprint"]` on an unreadable Bot got a KeyError, so the one row you
+        most need to inspect was the one that crashed the inspector.
+        """
+        import tools
+        import json as _json
+        with tempfile.TemporaryDirectory() as t:
+            root = Path(t)
+            canon = policy.policy_path(root)
+            canon.parent.mkdir(parents=True)
+            canon.write_text("- ask first\n")
+            pdir = root / "profiles" / "noperm"
+            pdir.mkdir(parents=True)
+            soul = pdir / "SOUL.md"
+            soul.write_text("# No\n")
+            soul.chmod(0o000)
+            orig = tools.hermes_root
+            tools.hermes_root = lambda: root
+            try:
+                out = _json.loads(tools.check_policies({}))
+            finally:
+                tools.hermes_root = orig
+                soul.chmod(0o644)
+        rows = {b["profile"]: b for b in out["bots"]}
+        self.assertIn("noperm", rows)
+        row = rows["noperm"]
+        for key in ("fingerprint", "canonical_fingerprint", "current",
+                    "has_shared_policy", "reason"):
+            self.assertIn(key, row, f"unreadable row is missing {key!r}")
+        self.assertIsNone(row["fingerprint"])
+        self.assertEqual(row["canonical_fingerprint"], out["canonical_fingerprint"])
+
+    def test_default_profile_is_not_audited(self):
+        """The default profile is not a forge Bot, so it is not audited.
+
+        Its SOUL.md sits at the root rather than under profiles/, so an earlier version
+        added it by hand -- and then reported it as `no_shared_policy` forever. Nothing can
+        fix that row: `_require_bot` refuses the default profile, so `forge` never writes a
+        block there and no documented call reaches it. A drift report whose rows cannot be
+        acted on is worse than one that omits them, because you learn to distrust the whole
+        report.
+        """
         import tools
         import json as _json
         with tempfile.TemporaryDirectory() as t:
@@ -365,7 +492,109 @@ class SharedPolicyPathSafetyTests(unittest.TestCase):
                 out = _json.loads(tools.check_policies({}))
             finally:
                 tools.hermes_root = orig
-        self.assertIn("default", out["stale"])
+        names = [b["profile"] for b in out["bots"]]
+        self.assertNotIn("default", names)
+        self.assertEqual(out["bots_checked"], 0, "no forge Bots exist in this root")
+
+    def test_policy_path_rejects_non_string(self):
+        """A template value reaches policy_path untyped; a list must not raise TypeError.
+
+        `create_agent` merges template keys over the spec, so this is reachable from a
+        downloaded `.botforge.json` -- the same entry point that made F3 a read primitive.
+        """
+        for bad in ([], {}, Path("/etc/passwd"), 7, True):
+            with self.subTest(value=bad):
+                with self.assertRaises(policy.PolicyPathError):
+                    policy.policy_path(Path("/tmp/hr"), bad)
+
+    def test_policy_path_rejects_home_relative_paths(self):
+        """A `~` path must not become a literal `~` directory inside the root.
+
+        `expanduser` used to run on the JOINED path, so `~/.hermes/shared/BOT-POLICY.md`
+        became <root>/~/.hermes/shared/BOT-POLICY.md -- still lexically contained, so the
+        containment check passed and create_agent would write the starter policy there,
+        silently in the wrong place. Rejecting it outright is stricter and simpler than
+        trying to expand it usefully: `shared_policy_path` is by definition root-relative.
+        """
+        with tempfile.TemporaryDirectory() as t:
+            root = Path(t) / "hr"
+            root.mkdir()
+            for bad in ("~/.hermes/shared/BOT-POLICY.md", "~/policy.md"):
+                with self.subTest(path=bad):
+                    with self.assertRaises(policy.PolicyPathError):
+                        policy.policy_path(root, bad)
+            # a plain relative path still resolves inside the root
+            ok = policy.policy_path(root, "shared/BOT-POLICY.md")
+            self.assertEqual(ok, root / "shared" / "BOT-POLICY.md")
+
+    def test_refresh_refuses_a_bare_soul(self):
+        """A Bot with no persona must not be handed a policy-only SOUL.md.
+
+        13 of the 17 real profiles are shaped this way. Writing one would replace an empty
+        file with house rules and no identity -- a Bot that is all policy and no Bot -- and
+        report ok: True, with no backup, because the file did not exist to back up.
+        """
+        import json as _json
+        import manage
+        import yaml
+        with tempfile.TemporaryDirectory() as t:
+            root = Path(t) / "hr"
+            pdir = root / "profiles" / "bare"
+            pdir.mkdir(parents=True)
+            (pdir / "config.yaml").write_text(yaml.safe_dump({"name": "bare"}))
+            canon = policy.policy_path(root)
+            canon.parent.mkdir(parents=True)
+            canon.write_text("- ask before spending\n")
+            with self.assertRaises(ValueError) as ctx:
+                manage.op_update({"name": "bare", "refresh_shared_policy": True}, root, {})
+            self.assertIn("no content of its own", str(ctx.exception))
+            self.assertEqual((pdir / "SOUL.md").exists(), False,
+                             "a policy-only SOUL.md was written")
+
+    def test_refresh_then_replace_soul_keeps_the_policy(self):
+        """`soul_md` replaces the whole file, so a policy injected moments earlier is gone.
+
+        The report used to say `shared_policy (already current)` while the write silently
+        dropped it -- claiming success for work it had undone.
+        """
+        import json as _json
+        import manage
+        import yaml
+        with tempfile.TemporaryDirectory() as t:
+            root = Path(t) / "hr"
+            pdir = root / "profiles" / "sol"
+            pdir.mkdir(parents=True)
+            (pdir / "config.yaml").write_text(yaml.safe_dump({"name": "sol"}))
+            (pdir / "SOUL.md").write_text("# Sol\n\nYou are **Sol**.\n")
+            canon = policy.policy_path(root)
+            canon.parent.mkdir(parents=True)
+            canon.write_text("- ask before spending\n")
+            out = manage.op_update({
+                "name": "sol", "refresh_shared_policy": True,
+                "soul_md": "# Sol\n\nYou are **Sol**.\n\nNew body.",
+            }, root, {})
+            self.assertTrue(out["ok"], out)
+            text = (pdir / "SOUL.md").read_text()
+            self.assertIn(policy.BEGIN, text, "the policy was dropped by the soul_md write")
+            self.assertIn("New body.", text)
+            self.assertNotIn("shared_policy (already current)", out.get("changed", []))
+
+    def test_health_reads_the_name_past_a_policy_block(self):
+        """A fourth 'persona starts at the top' reader, missed by the first review.
+
+        `health` checked the first 400 characters of the raw SOUL.md, so the Bot's own name
+        fell outside the window for any Bot carrying a policy block -- flagging two
+        identical healthy personas as broken, one only because it had a policy.
+        """
+        import forge
+        persona = "# Handwritten\\n\\n## Your one job\\n\\nDo the thing.\\n"
+        block = policy.inject(policy.STARTER_POLICY, persona)
+        self.assertEqual(forge.soul_role(persona), forge.soul_role(block),
+                         "the role must survive a policy block")
+        self.assertIn("Handwritten", forge.persona_text(block)[:400],
+                      "the name must be findable in the persona, not the raw file")
+        self.assertNotIn("Handwritten", block[:400],
+                         "this is exactly the bug: the name was past the window")
 
     def test_comments_only_canonical_policy_is_an_error(self):
         """A policy of only comments would build Bots with no rules at all."""

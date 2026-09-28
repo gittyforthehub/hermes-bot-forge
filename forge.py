@@ -201,6 +201,20 @@ def _persona(soul: str) -> str:
     otherwise returns '' and `ensure_identity` rebuilds the file around a marker comment,
     which is how a copied Bot ended up introducing itself as "the Bot" instead of its
     role while the original heading survived underneath.
+
+    Deprecated alias kept so external callers keep working; new code should use
+    `persona_text`, which is public because more than one module needs it.
+    """
+    return persona_text(soul)
+
+
+def persona_text(soul: str) -> str:
+    """The Bot's own content, with any generated shared-policy block removed.
+
+    Public because the check is needed in more than one place: `forge` itself, and
+    `health`'s "does this SOUL.md state the Bot's own name" flag, which used to read
+    the first 400 characters of the raw file and so pushed the name out of range for
+    any Bot carrying a policy block.
     """
     if not has_block(soul):
         return soul or ""

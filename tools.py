@@ -210,20 +210,22 @@ def check_policies(args: dict, **kwargs) -> str:
     expected = policy_mod.fingerprint(canon_text)
 
     bots, stale, without, unreadable = [], [], [], []
-    # The default profile keeps its SOUL.md at the root, not under profiles/.
     candidates = [prof for prof in (sorted((root / "profiles").glob("*"))
                                    if (root / "profiles").is_dir() else [])]
-    default_soul = root / "SOUL.md"
-    if default_soul.exists():
-        candidates.append(root)
+    # The default profile's SOUL.md sits at the root, not under profiles/, so it is not in the
+    # glob above. It is deliberately NOT audited: `_require_bot` refuses it, so `forge` never
+    # writes a block there and no documented call can ever fix it. Reporting a permanent
+    # `no_shared_policy` for a profile no operation can act on would make the drift report
+    # untrustworthy -- the whole point of this tool is that every row it prints is actionable.
     for prof in candidates:
-        name = "default" if prof == root else prof.name
+        name = prof.name
         soul = prof / "SOUL.md"
         try:
             text = soul.read_text(errors="replace")
         except OSError as exc:
             bots.append({"profile": name, "error": str(exc)[:120], "current": False,
-                         "has_shared_policy": False, "reason": "unreadable"})
+                         "has_shared_policy": False, "reason": "unreadable",
+                         "fingerprint": None, "canonical_fingerprint": expected})
             unreadable.append(name)
             continue
         report = policy_mod.audit_soul(text, expected)

@@ -3,6 +3,63 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] - 2026-09-28
+
+A second independent review of the shared-policy feature returned `no_ship` again: the nine
+fixes in 0.16.0 were all real (reverting each *guard* fails the suite 9/9), but they introduced
+seven new defects. The worst is a correctness regression in the drift detector itself.
+
+### Fixed
+- **The drift detector could no longer see a structural change.** The 0.16.0 fix for cosmetic
+  reformatting normalised `  - sub` to `- sub`, discarding indentation — so a nested rule and a
+  flat one hashed identically, and five of six distinct-policy pairs collided. A real change to
+  the policy's structure reported as *no drift*, silently. That is strictly worse than the
+  cosmetic false positive it replaced, and it is the feature's central promise failing.
+  Indentation is now preserved and only the *common* margin of each block is dedented, so a list
+  indented under its heading is still the same list while a sub-bullet keeps its depth. The same
+  fix applies to numbered lists, which had the same latent bug.
+- **`health` read the raw SOUL, so a policy hid the Bot's own name.** A fourth
+  "persona starts at the top" reader that the first review missed: it checked the first 400
+  characters for the Bot's title, and a ~2000-character policy block pushed the name outside the
+  window. Two identical healthy personas then differed in verdict, one only because it carried a
+  policy. `forge.persona_text()` is now public — the check is needed in more than one module.
+- **`refresh_shared_policy` would write a policy-only SOUL.md.** A Bot with no persona of its
+  own was handed house rules and no identity, reporting `ok: True`, backing up nothing because
+  the file did not exist. 13 of the 17 real profiles are shaped that way. Now refused, with the
+  reason and the fix.
+- **`check_policies` reported a row nothing could fix.** The `default` profile's SOUL.md sits
+  at the Hermes root rather than under `profiles/`, so it was added to the audit by hand — and
+  `_require_bot` refuses exactly that profile, so the row could never be acted on. A drift
+  report whose rows cannot be acted on is worse than one that omits them, because you learn to
+  distrust the whole report. It is no longer audited.
+- **`shared_policy_path` accepted a non-string.** Reachable from a downloaded template, the same
+  entry point that made the path a read primitive in 0.15.1: a list raised `TypeError` far from
+  the guard, and an absolute `Path` silently replaced the root, discarding containment entirely.
+- **`~` was expanded on the *joined* path**, so `~/.hermes/shared/BOT-POLICY.md` became
+  `<root>/~/.hermes/...` — still lexically contained, so the check passed and `create_agent`
+  would write the starter policy there, silently in the wrong place. Home-relative paths are now
+  rejected outright; the field is root-relative by definition.
+- **Unreadable rows omitted `fingerprint` and `canonical_fingerprint`**, which `audit_soul`
+  always returns and the docs promise — so a caller inspecting the one row that most needed
+  reading got a `KeyError`.
+- **`refresh_shared_policy` + `soul_md` in one call silently dropped the policy** while
+  reporting `shared_policy (already current)`. Claiming success for work the write had undone.
+
+### Added
+- `bench/round3_mutation_check.py`, in CI: reverts all eight fixes above and requires the suite
+  to catch each one.
+
+### Corrected
+- Three of my own 0.16.0 regression tests were false confidence — they asserted on a helper
+  rather than on the behaviour, so reverting the fix left them green. The mutation check is what
+  exposed them, which is the argument for keeping it.
+- Two patterns in `shared_policy_mutation_check.py` had gone stale: one tested the
+  default-profile audit this release deliberately removes, the other no longer matched the
+  rewritten normaliser. Both updated; the count is now 11/11 rather than 9/9.
+- A stale `__pycache__` could shadow a mutation and make it look caught. Both new and existing
+  checks now run the suite with `-B` and read the unittest report rather than trusting the exit
+  code, which is not a reliable signal in this environment.
+
 ## [0.16.0] - 2026-09-28
 
 An independent adversarial review of the shared-policy feature returned `no_ship`. Two of its

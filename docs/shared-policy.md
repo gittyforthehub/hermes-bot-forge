@@ -76,12 +76,16 @@ fingerprint, and returns:
 - `unreadable` — the file could not be read; these are reported, not silently counted as fine
 - `bots` — per-Bot `current`, `reason`, and both fingerprints
 
-The `default` profile is included: its `SOUL.md` lives at the Hermes root, not under
-`profiles/`.
+The `default` profile is **not** audited. Its `SOUL.md` lives at the Hermes root rather than
+under `profiles/`, and `_require_bot` refuses it, so `forge` never writes a block there and no
+documented call could ever bring it current. Reporting a row that cannot be acted on is worse
+than omitting it — you stop trusting the rows you *can* act on.
 
 Only the policy **body** is hashed. Fence markers and comments are removed, blank-line runs
 are collapsed, and cosmetic differences are normalised — CRLF line endings, trailing
-whitespace, and `-` / `*` / `+` bullet markers all hash the same. Two consequences:
+whitespace, `-` / `*` / `+` bullet markers, and the indentation shared by a whole block all
+hash the same. Indentation *relative to a sibling* is preserved, so adding, removing or
+re-nesting a sub-bullet is a real change and does show up as drift. Two consequences:
 
 - Editing a comment, or saving the file from an editor that uses CRLF, is not a policy change.
   A drift report that fires on cosmetics is one people learn to ignore, and then it stops

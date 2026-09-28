@@ -43,9 +43,14 @@ jobs:
         # reverts one load-bearing decision in policy.py; every one must be caught.
         run: python bench/policy_mutation_check.py
       - name: Shared-policy regression mutation check
-        # Nine defects an independent review found in the shared-policy feature, including two
+        # Defects an independent review found in the shared-policy feature, including two
         # that corrupted copy_agent and share_agent. Reverting any one must fail the suite.
         run: python bench/shared_policy_mutation_check.py
+      - name: Round-3 shared-policy mutation check
+        # The previous round's own fixes introduced new defects -- the worst being a drift
+        # normaliser that made a nested rule hash identically to a flat one, so real
+        # structural changes reported as no drift. Reverting any one must fail the suite.
+        run: python bench/round3_mutation_check.py
       - name: External-skill mutation check
         # The process benchmark's oracle once called the same helpers it was checking, so
         # breaking external-dir discovery broke both sides and all 46 gates still passed.

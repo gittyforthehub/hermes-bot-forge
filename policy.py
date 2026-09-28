@@ -126,7 +126,23 @@ def policy_path(hermes_root: Path, relative: str | None = None) -> Path:
     visible choice by the user; a `../` in a downloaded template is not.
     """
     root = Path(hermes_root).expanduser()
-    candidate = (root / (relative or DEFAULT_RELATIVE)).expanduser()
+    if relative is not None and not isinstance(relative, str):
+        # Reachable from a downloaded template, so never assume the type. `root / [...]` on a
+        # list or a Path raises TypeError far from here, and an absolute Path in the spec
+        # silently replaces the root, discarding the containment check entirely.
+        raise PolicyPathError(
+            f"shared_policy_path must be a string, got {type(relative).__name__}"
+        )
+    # `expanduser` must run on the RELATIVE part only. On the joined path it would turn
+    # "~/.hermes/shared/BOT-POLICY.md" into a literal "~" directory inside the root, and
+    # create_agent would write the starter policy there -- still lexically contained, so the
+    # check below would pass, and silently in the wrong place.
+    rel = Path(relative).expanduser() if relative is not None else Path(DEFAULT_RELATIVE)
+    if rel.is_absolute():
+        raise PolicyPathError(
+            f"shared_policy_path must be relative to the Hermes root, got {relative!r}"
+        )
+    candidate = root / rel
     try:
         lex = Path(os.path.normpath(str(candidate)))
     except (OSError, ValueError) as exc:
@@ -167,9 +183,44 @@ def policy_body(text: str) -> str:
     # report something people stop reading.
     body = body.replace("\r\n", "\n").replace("\r", "\n")
     body = "\n".join(line.rstrip() for line in body.split("\n"))
-    body = re.sub(r"(?m)^[ \t]*[-*+][ \t]+", "- ", body)
-    body = re.sub(r"(?m)^[ \t]*(\d+)[.)][ \t]+", r"\1. ", body)
+    # Normalise the bullet marker but KEEP the indentation, normalised to spaces, and only
+    # after removing the indentation every line shares. Collapsing `  - sub` to `- sub` would
+    # make a nested rule hash identically to a flat one -- a real change to the policy's
+    # structure reporting as no drift at all, which is far worse than the cosmetic false
+    # positive this normalisation exists to avoid. Dedenting the COMMON margin first keeps the
+    # cosmetic case working: a list indented under its heading is the same list, while a
+    # sub-bullet stays deeper than its parent.
+    body = _dedent(body)
+    body = re.sub(r"(?m)^([ \t]*)[-*+][ \t]+", lambda m: m.group(1) + "- ", body)
+    body = re.sub(r"(?m)^([ \t]*)(\d+)[.)][ \t]+", lambda m: m.group(1) + f"{m.group(2)}. ", body)
     return re.sub(r"\n{3,}", "\n\n", body).strip()
+
+
+def _dedent(text: str) -> str:
+    """Remove, per block, the indentation every line in that block shares; tabs become spaces.
+
+    Dedenting per block rather than per document is what makes both cases work: a list
+    written two spaces under its heading is the same list, while a sub-bullet inside an
+    already-flush list keeps its depth relative to its parent. Only the *relative* depth of
+    a line against its siblings carries meaning.
+    """
+    blocks: list[list[str]] = [[]]
+    for line in text.split("\n"):
+        if line.strip():
+            blocks[-1].append(line)
+        else:
+            blocks.append([])
+    out: list[str] = []
+    for block in blocks:
+        if not block:
+            out.append("")
+            continue
+        # Expand tabs FIRST, then measure. Doing it per-line in two different ways made a
+        # tab-indented list dedent to one space instead of none.
+        flat = [ln.expandtabs(2) for ln in block]
+        common = min(len(ln) - len(ln.lstrip(" ")) for ln in flat)
+        out.extend(ln[common:] if common else ln for ln in flat)
+    return "\n".join(out)
 
 
 def fingerprint(text: str) -> str:

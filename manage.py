@@ -94,7 +94,9 @@ def op_update(s: dict, root: Path, settings: dict) -> dict:
     # shared policy refresh. This is the documented fix for a stale Bot, and it has to exist
     # as a real operation: create_agent refuses a name that is already taken, so telling
     # someone to "re-run create_agent" for an existing Bot never converges.
-    if s.get("refresh_shared_policy"):
+    refresh_policy = bool(s.get("refresh_shared_policy"))
+    pol_text = ""
+    if refresh_policy:
         import policy as policy_mod
 
         root = Path(s.get("hermes_root") or Path.home() / ".hermes")
@@ -111,6 +113,16 @@ def op_update(s: dict, root: Path, settings: dict) -> dict:
             raise ValueError(f"could not read shared policy {pol}: {exc}")
         if not policy_mod.policy_body(text):
             raise ValueError(f"shared policy has no rules, only comments: {pol}")
+        pol_text = text
+        # A Bot with no persona of its own has nothing for the policy to sit on top of.
+        # Writing one would replace an empty SOUL.md with house rules and no identity --
+        # a Bot that is all policy and no Bot. Refuse instead, and say what to do.
+        if not forge.persona_text(soul).strip():
+            raise ValueError(
+                f"{name}'s SOUL.md has no content of its own, so a policy refresh would leave it "
+                "with rules and no identity. Give it a persona first (update_agent soul_md), "
+                "or leave it unmanaged -- a Bot with no SOUL.md is not a Bot that needs one."
+            )
         refreshed = policy_mod.inject(text, soul)
         if policy_mod.fingerprint(refreshed) == policy_mod.fingerprint(soul):
             changed.append("shared_policy (already current)")
@@ -128,6 +140,12 @@ def op_update(s: dict, root: Path, settings: dict) -> dict:
         backups["SOUL.md"] = _backup(pdir, "SOUL.md")
         title = _bot_meta(pdir).get("title") or name.capitalize()
         soul = new_soul if new_soul else (soul.rstrip() + "\n\n" + append.strip() + "\n")
+        # `soul_md` replaces the whole file, so a policy injected moments ago is gone. Inject
+        # again when the caller asked for both, and drop the earlier claim from `changed` so
+        # the report does not say the policy is current when the write just removed it.
+        if refresh_policy and pol_text:
+            soul = policy_mod.inject(pol_text, soul)
+            changed = [c for c in changed if c != "shared_policy"]
         soul_path.write_text(forge.ensure_identity(soul, title, s.get("role") or "Bot", name))
         changed.append("soul")
 

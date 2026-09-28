@@ -40,16 +40,32 @@ MUTATIONS = [
      "        \"current\": sum(1 for b in bots if b.get(\"current\")),",
      "        \"current\": len(bots) - len(stale) - len(without),"),
 
-    ("F5b", TOOLS, "default profile not audited",
-     "    if default_soul.exists():\n        candidates.append(root)",
-     "    if False:\n        candidates.append(root)"),
+    # F5b (the default-profile audit) was intentionally REMOVED in round 3: `_require_bot`
+    # refuses the default profile, so that row could never be acted on. Reinstating it is
+    # no longer a mutation to catch -- the current tests assert its absence, so a mutation
+    # that adds it back is caught by `test_default_profile_is_not_audited`.
 
-    ("F8", POL, "cosmetic whitespace not normalised (CRLF/trailing/bullets)",
-     "    body = body.replace(\"\\r\\n\", \"\\n\").replace(\"\\r\", \"\\n\")\n"
-     "    body = \"\\n\".join(line.rstrip() for line in body.split(\"\\n\"))\n"
-     "    body = re.sub(r\"(?m)^[ \\t]*[-*+][ \\t]+\", \"- \", body)\n"
-     "    body = re.sub(r\"(?m)^[ \\t]*(\\d+)[.)][ \\t]+\", r\"\\1. \", body)",
-     "    pass"),
+    # Not one contiguous run: the dedent has a comment above it. Match the two halves that
+    # carry the behaviour, so a comment edit doesn't invalidate this check.
+    ("F8a", POL, "bullet marker not normalised",
+     '    body = re.sub(r"(?m)^([ \\t]*)[-*+][ \\t]+", lambda m: m.group(1) + "- ", body)',
+     '    body = re.sub(r"(?m)^([ \\t]*)[-*+][ \\t]+", "- ", body)'),
+
+    # `r"\1. "` looks like a revert but isn't: the capture group numbering differs, so it
+    # silently discards the indent. That is the bug the numbered branch is guarding against,
+    # so mutate to something that really does drop it.
+    ("F8b", POL, "numbered sub-list loses its indent (same class of bug as G1)",
+     '    body = re.sub(r"(?m)^([ \\t]*)(\\d+)[.)][ \\t]+", lambda m: m.group(1) + f"{m.group(2)}. ", body)',
+     '    body = re.sub(r"(?m)^[ \\t]*(\\d+)[.)][ \\t]+", r"\\1. ", body)'),
+
+    ("F8c", POL, "common indent not removed (a whole block shifts = cosmetic)",
+     "    body = _dedent(body)\n",
+     "    pass\n"),
+
+    ("F8d", POL, "CRLF / trailing whitespace not normalised",
+     '    body = body.replace("\\r\\n", "\\n").replace("\\r", "\\n")\n'
+     '    body = "\\n".join(line.rstrip() for line in body.split("\\n"))\n',
+     "    pass\n"),
 
     ("F9", FORGE, "comments-only policy accepted",
      "        if not policy_mod.policy_body(text):",
