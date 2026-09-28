@@ -286,6 +286,47 @@ class ForgeHarnessWiring(unittest.TestCase):
             self.assertNotIn("error", out["harness"])
             self.assertEqual(out["harness"]["domain"], "beekeeping")
 
+    def test_falsy_non_dict_manifest_is_rejected_not_crashed(self):
+        """Regression: `[]`, `0` and `false` skipped a truthiness guard and crashed.
+
+        The old guard was `inline_manifest and not isinstance(inline_manifest, dict)`, so a
+        falsy non-dict passed it and reached `.get()` — raising AttributeError outside the
+        rollback handler, after the profile had already been created. The caller got a raw
+        traceback string and a half-built Bot that was never rolled back.
+        """
+        for bad in ([], 0, False):
+            with self.subTest(manifest=bad), tempfile.TemporaryDirectory() as t:
+                root = make_root(Path(t))
+                out = self._run(self._spec(root, harness_manifest=bad), root)
+                self.assertFalse(out.get("ok"), f"{bad!r} must be rejected, not crash")
+                self.assertIn("JSON object", str(out.get("error", "")))
+
+    def test_rejected_manifest_does_not_leave_a_built_bot_behind(self):
+        """A rejected manifest must not leave the Bot it was about to create."""
+        with tempfile.TemporaryDirectory() as t:
+            root = make_root(Path(t))
+            out = self._run(self._spec(root, harness_manifest=[]), root)
+            self.assertFalse(out.get("ok"))
+            self.assertFalse(any((root / "profiles").glob("*/SOUL.md")),
+                             "a rejected manifest must not leave a built Bot behind")
+
+    def test_manifest_domain_alone_curates_without_a_harness_key(self):
+        """The load-bearing line, with no `domain` key to fall back on.
+
+        Every other test in this class passes a manifest containing `"domain"`, so
+        `s.get("harness") or s.get("domain") or inline_manifest.get("domain")` could
+        resolve from the first two terms and the third term went untested — a revert of the
+        inline-manifest guard alone still passed the whole suite.
+        """
+        with tempfile.TemporaryDirectory() as t:
+            root = make_root(Path(t))
+            manifest = {"label": "Beekeeping", "summary": "hives",
+                        "skills": ["stocks"], "skill_categories": ["finance"]}
+            out = self._run(self._spec(root, harness_manifest=manifest), root)
+            self.assertTrue(out["ok"], out.get("error"))
+            self.assertIsNotNone(out["harness"], "an inline manifest must produce a harness block")
+            self.assertNotIn("error", out["harness"])
+
     def test_manifest_without_skills_is_reported_not_ignored(self):
         with tempfile.TemporaryDirectory() as t:
             root = make_root(Path(t))

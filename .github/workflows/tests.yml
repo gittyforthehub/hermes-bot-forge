@@ -42,3 +42,8 @@ jobs:
         # The drift detector is only useful if it fails when drift exists. Each mutation
         # reverts one load-bearing decision in policy.py; every one must be caught.
         run: python bench/policy_mutation_check.py
+      - name: External-skill mutation check
+        # The process benchmark's oracle once called the same helpers it was checking, so
+        # breaking external-dir discovery broke both sides and all 46 gates still passed.
+        # This breaks the implementation and requires --gated to notice.
+        run: python bench/external_mutation_check.py

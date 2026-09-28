@@ -209,9 +209,17 @@ python bench/process_bench.py --negative
 
 The harness suite covers inventory, allowlist planning, the external-dirs rules, the
 registry JSON parsing, failure handling, and the `forge()` wiring. The process benchmark
-checks five domain-agnostic invariants across 46 generated manifests, and the negative
-tests prove each gate fails when the behaviour it guards is broken. The integration
-tests stub profile creation, so everything runs offline in seconds.
+checks five domain-agnostic invariants across 46 generated manifests.
+
+The negative tests inject four faults into the pipeline and require each gate to catch its
+own. That is a floor, not a proof: a gate cannot detect a fault that is invisible to the
+inputs it is given, and the benchmark's oracle once shared helpers with the code it
+checked — so breaking external-skill discovery broke both sides and all 46 gates still
+passed. `bench/external_mutation_check.py` now covers that specific gap by breaking the
+implementation and requiring `--gated` to notice, and both mutation checks run in CI. A
+benchmark that cannot fail is worse than none, because it gets cited as evidence.
+
+The integration tests stub profile creation, so everything runs offline in seconds.
 
 ## Contributing a manifest
 

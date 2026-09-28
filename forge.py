@@ -486,7 +486,10 @@ def forge(s: dict) -> dict:
     # ordinary path. Treating it as a bad value rejected every harness build.
     if inline_manifest is None:
         inline_manifest = {}
-    if inline_manifest and not isinstance(inline_manifest, dict):
+    # `not isinstance` rather than `inline_manifest and not isinstance`: a falsy non-dict
+    # (`[]`, `0`, `false`) skipped the old truthiness guard and reached `.get()` below,
+    # raising AttributeError outside the rollback handler — after the profile existed.
+    if not isinstance(inline_manifest, dict):
         return {"ok": False, "error": "harness_manifest must be a JSON object"}
     domain = s.get("harness") or s.get("domain") or inline_manifest.get("domain")
     if domain or inline_manifest:

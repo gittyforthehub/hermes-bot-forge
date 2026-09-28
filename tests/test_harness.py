@@ -277,6 +277,38 @@ class ManifestTests(unittest.TestCase):
         self.assertIsNone(harness.load_manifest("TEMPLATE"))
 
 
+class RegistryJsonExtractionTests(unittest.TestCase):
+    """The payload must win over a status object or empty list printed before it."""
+
+    def test_status_object_before_payload_does_not_win(self):
+        import registry
+        text = '{"status":"ok","msg":"scanning"}\n[{"id":"x"}]'
+        self.assertEqual(registry._json_from(text), [{"id": "x"}],
+                         "a status object printed first must not be returned as the payload")
+
+    def test_empty_list_before_payload_does_not_win(self):
+        import registry
+        text = "[]\n[{\"id\":\"x\"}]"
+        self.assertEqual(registry._json_from(text), [{"id": "x"}],
+                         "an empty progress array must not be mistaken for an empty result")
+
+    def test_genuine_empty_list_is_still_returned(self):
+        import registry
+        self.assertEqual(registry._json_from("[]"), [],
+                         "a registry with no matches is a real answer, not noise")
+
+    def test_progress_prefix_and_epilogue_still_tolerated(self):
+        import registry
+        self.assertEqual(registry._json_from("[1/3] installing\n[{\"id\":\"x\"}]"), [{"id": "x"}])
+        self.assertEqual(registry._json_from("[{\"id\":\"x\"}]\nUpdated 1 skill in 0.4s"),
+                         [{"id": "x"}])
+
+    def test_no_json_returns_none(self):
+        import registry
+        self.assertIsNone(registry._json_from("nothing here"))
+        self.assertIsNone(registry._json_from(""))
+
+
 class RegistryParseTests(unittest.TestCase):
     """The CLI's `--json` output is the contract. Long identifiers get truncated and wrapped
     in the human table, so parsing JSON is the only safe path."""

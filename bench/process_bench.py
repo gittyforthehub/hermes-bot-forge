@@ -37,9 +37,12 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import sys
 import tempfile
 from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -131,6 +134,75 @@ def stock_keep(profile: Path, manifest: dict, floor: set[str]) -> set[str]:
     return keep
 
 
+def _skill_roots(profile: Path) -> list[Path]:
+    """Every skill directory this profile loads, re-derived from its config.yaml.
+
+    Deliberately independent of `harness.external_dirs`. The oracle has to be able to
+    disagree with the implementation, or it cannot catch a bug in it — an earlier version
+    of this file called the helper under test, which meant breaking external-dir discovery
+    broke both sides at once and all 46 gates still passed.
+
+    The YAML is parsed here rather than via `harness._read_cfg` for the same reason.
+    """
+    roots = [profile / "skills"]
+    cfg_path = profile / "config.yaml"
+    if not cfg_path.is_file():
+        return roots
+    try:
+        cfg = yaml.safe_load(cfg_path.read_text())
+    except Exception:
+        return roots
+    skills_cfg = cfg.get("skills") if isinstance(cfg, dict) else None
+    if not isinstance(skills_cfg, dict):
+        return roots
+    dirs = skills_cfg.get("external_dirs") or []
+    if isinstance(dirs, str):
+        dirs = [dirs]
+    for d in dirs:
+        if d:
+            roots.append(Path(str(d)).expanduser())
+    return roots
+
+
+def _own_inventory(profile: Path) -> dict[str, Path]:
+    """Every skill this profile can actually load, mapped name -> SKILL.md, derived here.
+
+    Walks the filesystem rather than calling `harness.inventory_with_externals`. The oracle
+    has to be able to disagree with the implementation; an oracle that enumerates skills
+    with the same code it is checking cannot disagree about anything that matters.
+
+    `rglob`, not `glob`: Hermes skill trees nest (a category folder containing a skill), and
+    a one-level scan silently under-counts the world — which makes the oracle wrong in a way
+    that looks exactly like the implementation being wrong. The value is the SKILL.md path,
+    matching the real inventory, so the category walk below can take its first segment.
+    Profile-local skills win a name collision, matching the real load order.
+    """
+    out: dict[str, Path] = {}
+    for root in _skill_roots(profile):
+        if not root.is_dir():
+            continue
+        for skill_md in sorted(root.rglob("SKILL.md")):
+            name = _own_skill_name(skill_md)
+            if name and name not in out:
+                out[name] = skill_md
+    # local overrides external
+    for skill_md in sorted((profile / "skills").rglob("SKILL.md")):
+        name = _own_skill_name(skill_md)
+        if name:
+            out[name] = skill_md
+    return out
+
+
+def _own_skill_name(skill_md: Path) -> str:
+    """The `name:` from a SKILL.md, re-derived with its own regex."""
+    try:
+        text = skill_md.read_text(errors="ignore")
+    except OSError:
+        return ""
+    m = re.search(r"^name:\s*['\"]?([^'\"\n]+)", text, re.M)
+    return m.group(1).strip() if m else skill_md.parent.name
+
+
 def check_domain(profile: Path, manifest: dict, floor: set[str]) -> dict:
     """Run the real pipeline against one manifest and evaluate the three properties."""
     cats = set(harness._name_list(manifest.get("skill_categories")))
@@ -139,7 +211,12 @@ def check_domain(profile: Path, manifest: dict, floor: set[str]) -> dict:
     named = set(harness._name_list(manifest.get("skills")))
     result = harness.plan(profile, manifest)
     keep = set(result["keep"])
-    available = harness.inventory_with_externals(profile)
+    # Inventory is re-derived here too, not taken from the helper under test. When external
+    # roots went missing from the implementation, an oracle built on the implementation's
+    # own inventory simply saw a smaller world and agreed with it — 46/46 passed while a real
+    # shared skill had silently stopped being curated. The oracle has to enumerate the
+    # filesystem itself.
+    available = _own_inventory(profile)
     report = harness.report(manifest, result, [])
 
     cfg = {"skills": {}}
@@ -160,7 +237,13 @@ def check_domain(profile: Path, manifest: dict, floor: set[str]) -> dict:
     # which is how a bug in that helper passed 46/46 for a whole review cycle. A shared
     # skill's category is its first segment below ANY skill root, and that is re-derived
     # from the path rather than by calling the implementation.
-    roots = [profile / "skills", *harness.external_dirs(harness._read_cfg(profile))]
+    #
+    # Root discovery is re-derived too. An earlier version built this list with
+    # `harness.external_dirs(harness._read_cfg(profile))`, so breaking external-dir
+    # discovery broke the oracle in the same way as the code under test and every gate
+    # still passed 46/46 — the benchmark could not see the exact class of regression it
+    # was cited as covering. Read the config here instead.
+    roots = _skill_roots(profile)
 
     def category_of(path: Path) -> str:
         for r in roots:

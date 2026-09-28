@@ -33,18 +33,24 @@ def _run(args: list[str], root: Path, timeout: int = TIMEOUT):
 
 
 def _json_from(text: str):
-    """Extract and parse the first JSON array/object in CLI output, tolerating log noise.
+    """Extract and parse the JSON payload in CLI output, tolerating log noise.
 
     Uses `raw_decode` so a trailing epilogue — `[1/3] installing` before the payload, or
     `Updated 1 skill in 0.4s` after it — does not invalidate the whole parse. A successful
     CLI call reported as an empty registry is the worst possible failure: the caller is told
     its query was wrong when the registry answered it.
+
+    So the first *parseable* value is not automatically the payload. A status object or an
+    empty list printed before the real result (progress reporting, a header) would be
+    returned and then rejected downstream as the wrong shape, reintroducing exactly that
+    failure. Prefer a non-empty list, then a non-empty object, and only fall back to an
+    empty one if nothing better exists — an empty list is a legitimate answer from a
+    registry that genuinely has no matches, and must not be confused with noise.
     """
     if not text:
         return None
     # A CLI progress line like "[1/3] installing" opens with a bracket, so the FIRST bracket
-    # is not necessarily the payload. Scan every bracket/brace position in order and take
-    # the first one that decodes to a list or object.
+    # is not necessarily the payload. Scan every bracket/brace position in order.
     candidates = sorted(i for i in (text.find("["), text.find("{")) if i != -1)
     for ch in ("[", "{"):
         start = 0
@@ -54,14 +60,24 @@ def _json_from(text: str):
                 break
             candidates.append(i)
             start = i + 1
+    found = []
     for start in sorted(set(candidates)):
         try:
             value, _end = json.JSONDecoder().raw_decode(text[start:])
         except ValueError:
             continue
         if isinstance(value, (list, dict)):
+            found.append(value)
+    if not found:
+        return None
+    # Best: a non-empty list (the shape every caller here wants), then any non-empty value.
+    for value in found:
+        if isinstance(value, list) and value:
             return value
-    return None
+    for value in found:
+        if isinstance(value, (list, dict)) and value:
+            return value
+    return found[0]
 
 
 def _norm(row: dict) -> dict:
