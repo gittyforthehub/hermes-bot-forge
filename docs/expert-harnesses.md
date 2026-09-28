@@ -176,6 +176,21 @@ Two subtleties worth knowing if you read the code:
 - `plan()` is pure. It touches no files, which is what makes the curation testable
   without creating a single profile.
 
+### What a curated Bot actually loads
+
+The disable list is not the same as the loaded set, and the difference matters if you are
+measuring the result. On a real install (158 profile-local skills, 138 shared/OMH
+external skills), the `ios` harness disables 124 local skills — leaving 34 local — but all
+138 external skills still load, because they live in another profile's directory and
+mutating that would be rude. So the Bot that answers is carrying roughly 172 skills, not
+34.
+
+That is a property of how Hermes composes profiles, not of the curator. The harness gives
+you exact control over the profile's *own* skills; anything reached through
+`external_dirs` is governed by whoever owns that directory. If you want a genuinely
+narrow Bot, either ship a profile with no or few external dirs, or trim the shared roots
+once for all Bots rather than per-profile.
+
 ## Testing
 
 ```bash

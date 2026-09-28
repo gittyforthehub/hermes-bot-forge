@@ -100,7 +100,14 @@ def install(identifier: str, category: str | None = None, name: str | None = Non
 
 
 def list_installed(root: Path | None = None) -> list[dict]:
-    """Installed skills with their category and enabled/disabled status."""
+    """Installed skills with their category and enabled/disabled status.
+
+    Note: `hermes skills list` has no JSON output and renders names truncated to ~16
+    columns, so the table form is unparseable. If a future Hermes adds `--json` here this
+    starts returning data with no other change; until then it returns [] and callers fall
+    back to scanning the skills directories on disk, which is the authoritative source for
+    what a profile can actually load.
+    """
     try:
         proc = _run(["skills", "list", "--json"], root or Path.home())
     except Exception:
