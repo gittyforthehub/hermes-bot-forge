@@ -104,6 +104,33 @@ def create_team(args: dict, settings: dict | None = None, **kwargs) -> str:
         return json.dumps({"ok": False, "error": _clean(p.stderr or out)[-1500:]})
 
 
+def harness_domains(args: dict, **kwargs) -> str:
+    """List curated expert-harness manifests. Read-only, never touches the network."""
+    try:
+        import harness as harness_mod
+    except ImportError as exc:
+        return json.dumps({"ok": False, "error": f"harness module unavailable: {exc}"})
+    out = []
+    for key in harness_mod.available_domains():
+        m = harness_mod.load_manifest(key)
+        if not m:
+            continue
+        out.append({
+            "domain": key,
+            "label": m.get("label"),
+            "summary": m.get("summary"),
+            "skills": m.get("skills") or [],
+            "skill_categories": m.get("skill_categories") or [],
+            "toolsets": m.get("toolsets") or [],
+            "registry_skills": [e.get("query") or e.get("identifier")
+                                for e in (m.get("registry_skills") or []) if isinstance(e, dict)],
+            "defaults": {k: v for k, v in (m.get("defaults") or {}).items() if k != "approvals"},
+            "approval_count": len((m.get("defaults") or {}).get("approvals") or []),
+        })
+    return json.dumps({"ok": True, "count": len(out), "domains": out,
+                       "custom_manifest": "pass `harness_manifest` (inline JSON) to curate any other domain"})
+
+
 def check_install(args: dict, **kwargs) -> str:
     try:
         p = subprocess.run([sys.executable, str(PLUGIN_DIR / "doctor.py"), "--json"],

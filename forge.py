@@ -66,7 +66,8 @@ def default_root() -> Path:
 DEFAULT_SETTINGS = {"inherit_model": True, "fallback_model": {},
                     "probe_local_models": False, "install_gateway": True, "suggest_connectors": True,
                     "journal_enabled": True, "ack_reactions": True, "ack_tapback": True,
-                    "workspace_survey": True, "workspace_roots": []}
+                    "workspace_survey": True, "workspace_roots": [],
+                    "harness_install": True}
 
 
 # ── hermes cli ───────────────────────────────────────────────────────────────
@@ -467,6 +468,32 @@ def forge(s: dict) -> dict:
              **{k: v for k, v in s.items() if v not in (None, "", [])}}
     if not s.get("role"):
         return {"ok": False, "error": "spec needs at least 'role'"}
+    # Expert harness: resolve a curated skill manifest for this domain before the overlap guard,
+    # so the guard compares against the skills the Bot will actually have.
+    harness = None
+    domain = s.get("harness") or s.get("domain")
+    if domain:
+        try:
+            import harness as harness_mod
+
+            manifest = s.get("harness_manifest") or harness_mod.load_manifest(domain, root)
+            if manifest:
+                harness = {"domain": manifest.get("domain"), "label": manifest.get("label"),
+                           "manifest": manifest}
+                if not s.get("skill_categories"):
+                    s["skill_categories"] = list(manifest.get("skill_categories") or [])
+                if not s.get("toolsets"):
+                    s["toolsets"] = list(manifest.get("toolsets") or [])
+                defaults = manifest.get("defaults") or {}
+                if not s.get("sandbox") and defaults.get("sandbox"):
+                    s["sandbox"] = defaults["sandbox"]
+                if s.get("approvals") is None and defaults.get("approvals"):
+                    s["approvals"] = list(defaults["approvals"])
+            elif s.get("harness_manifest") is None:
+                harness = {"domain": domain, "error": f"no harness manifest for '{domain}'",
+                           "available": harness_mod.available_domains()}
+        except Exception as exc:
+            harness = {"domain": domain, "error": f"harness resolution skipped: {exc}"[:200]}
     # Two Bots with the same job is what makes a roster useless. Check before building, not after.
     guard = None
     if settings.get("workspace_survey", True):
@@ -597,6 +624,34 @@ def forge(s: dict) -> dict:
             cfg["terminal"] = terminal
         dump_yaml(cfg_path, cfg)
 
+        # 4b. expert harness: install missing registry skills, then reduce to the manifest allowlist
+        if harness and harness.get("manifest"):
+            try:
+                import harness as harness_mod
+                import registry as registry_mod
+
+                manifest = harness["manifest"]
+                entries = harness_mod.resolve_registry(registry_mod, manifest) if settings.get("harness_install", True) else []
+                for entry in entries:
+                    if entry.get("status") == "resolved" and entry.get("identifier"):
+                        outcome = registry_mod.install(entry["identifier"], entry.get("category"),
+                                                       entry.get("name"), root=root)
+                        entry["install"] = outcome.get("status")
+                # Re-read config: an install may have added skills to the profile.
+                cfg = load_yaml(cfg_path)
+                hresult = harness_mod.plan(pdir, manifest, cfg)
+                if hresult["missing"] and settings.get("harness_install", True):
+                    for name in list(hresult["missing"]):
+                        if registry_mod.install(name, category="software-development", root=root).get("status") == "installed":
+                            cfg = load_yaml(cfg_path)
+                            hresult = harness_mod.plan(pdir, manifest, cfg)
+                            break
+                cfg = harness_mod.apply_plan(cfg, hresult, set((s.get("taught_skills") or {}).keys()))
+                dump_yaml(cfg_path, cfg)
+                harness = harness_mod.report(manifest, hresult, entries)
+            except Exception as exc:
+                harness = {"domain": harness.get("domain"), "error": f"harness curation failed: {exc}"[:200]}
+
         # 5. routines
         routines = []
         for r in s.get("routines") or []:
@@ -640,6 +695,7 @@ def forge(s: dict) -> dict:
                 "warning": warning, "toolsets": sorted(tools),
                 "skills_disabled": len(disabled), "routines": routines, "gateway": gateway, "intro": reply[-600:],
                 "journal": journal_path, "reactions": marks, "workspace": workspace,
+                "harness": harness,
                 "note": "done — it already introduced itself. Do not message, test or change this Bot; just report."}
     except Exception as e:
         rolled_back = False

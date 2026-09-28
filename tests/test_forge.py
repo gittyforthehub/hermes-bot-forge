@@ -170,6 +170,116 @@ class LaunchProfile(unittest.TestCase):
             self.assertEqual(tools.launch_profile(None, root), "default")
 
 
+class ForgeHarnessWiring(unittest.TestCase):
+    """The `harness` key must reach the create path: toolsets, categories, sandbox and
+    approvals come from the manifest, and an unknown domain is reported, never silent."""
+
+    def _spec(self, root, **over):
+        base = {"hermes_root": str(root), "role": "iOS Engineer", "display_name": "Sable",
+                "settings": {"inherit_model": False, "install_gateway": False, "workspace_survey": False,
+                             "journal_enabled": False, "ack_tapback": False, "ack_reactions": False,
+                             "harness_install": False}}
+        base.update(over)
+        return base
+
+    def _run(self, spec, root):
+        """Drive forge() far enough to observe the harness block, with the profile
+        creation + Bot Chat stubbed so no real profile is touched."""
+        from unittest import mock
+
+        def fake_run(r, *a, **k):
+            # Emulate `hermes profile create` materialising the profile dir.
+            if a[:1] == ("profile",) and a[1:2] == ("create",):
+                name = a[2]
+                d = Path(r) / "profiles" / name
+                d.mkdir(parents=True, exist_ok=True)
+                (d / "config.yaml").write_text(yaml.safe_dump(
+                    {"model": {"default": "m"}, "skills": {}}))
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        def fake_chat(r, name, msg, source=""):
+            return True, f"hi from {name}"
+
+        with mock.patch.object(forge, "run", side_effect=fake_run), \
+                mock.patch.object(forge, "bot_chat", side_effect=fake_chat), \
+                mock.patch.object(forge, "existing_bot_names", return_value=set()), \
+                mock.patch.object(forge, "survey", create=True):
+            out = forge.forge(spec)
+        return out
+
+    def test_known_domain_populates_the_harness_block(self):
+        with tempfile.TemporaryDirectory() as t:
+            root = make_root(Path(t))
+            out = self._run(self._spec(root, harness="ios"), root)
+            h = out.get("harness")
+            self.assertTrue(out["ok"], out.get("error"))
+            self.assertIsNotNone(h)
+            self.assertEqual(h.get("domain"), "ios")
+            self.assertEqual(h.get("label"), "Native iOS engineering")
+            # The fixture profile has no skills on disk, so every manifest skill is a
+            # reported gap rather than a kept skill — the block must still be a real
+            # curation report, not a stub.
+            self.assertEqual(h.get("missing_skills"),
+                             sorted(json.loads((ROOT / "harnesses" / "ios.json").read_text())["skills"]))
+            self.assertTrue(h.get("gaps"), "missing skills must be reported as gaps")
+            self.assertNotIn("error", h)
+
+    def test_manifest_skills_present_on_disk_are_kept(self):
+        with tempfile.TemporaryDirectory() as t:
+            root = make_root(Path(t))
+            bot = root / "profiles" / "sable" / "skills" / "software-development" / "ios-app-delivery"
+            bot.mkdir(parents=True)
+            (bot / "SKILL.md").write_text("---\nname: ios-app-delivery\n---\n")
+            out = self._run(self._spec(root, harness="ios"), root)
+            h = out["harness"]
+            self.assertIn("ios-app-delivery", h["kept_skills"])
+            self.assertNotIn("ios-app-delivery", h["missing_skills"])
+
+    def test_manifest_applies_toolsets_and_approvals(self):
+        with tempfile.TemporaryDirectory() as t:
+            root = make_root(Path(t))
+            out = self._run(self._spec(root, harness="ios"), root)
+            self.assertTrue(out["ok"], out.get("error"))
+            self.assertIn("terminal", out["toolsets"])
+            approvals = " ".join(out["approvals"])
+            self.assertIn("App Store Connect", approvals)
+            self.assertEqual(out["sandbox"], "local")
+
+    def test_unknown_domain_is_reported_with_the_available_list(self):
+        with tempfile.TemporaryDirectory() as t:
+            root = make_root(Path(t))
+            out = self._run(self._spec(root, harness="not-a-domain-xyz"), root)
+            self.assertTrue(out["ok"], "an unknown harness must not abort the build")
+            h = out["harness"]
+            self.assertIn("error", h)
+            self.assertIn("ios", h["available"])
+
+    def test_no_harness_key_means_no_harness_block(self):
+        with tempfile.TemporaryDirectory() as t:
+            root = make_root(Path(t))
+            out = self._run(self._spec(root), root)
+            self.assertTrue(out["ok"], out.get("error"))
+            self.assertIsNone(out["harness"])
+
+    def test_inline_manifest_curates_an_unlisted_domain(self):
+        with tempfile.TemporaryDirectory() as t:
+            root = make_root(Path(t))
+            manifest = {"domain": "beekeeping", "label": "Beekeeping", "summary": "hives",
+                        "skills": ["stocks"], "skill_categories": ["finance"], "toolsets": ["file"]}
+            out = self._run(self._spec(root, harness="beekeeping", harness_manifest=manifest), root)
+            self.assertTrue(out["ok"], out.get("error"))
+            self.assertEqual(out["harness"]["domain"], "beekeeping")
+            self.assertEqual(out["harness"]["label"], "Beekeeping")
+
+    def test_explicit_toolsets_in_spec_win_over_the_manifest(self):
+        with tempfile.TemporaryDirectory() as t:
+            root = make_root(Path(t))
+            out = self._run(self._spec(root, harness="ios", toolsets=["file"]), root)
+            self.assertTrue(out["ok"], out.get("error"))
+            self.assertIn("file", out["toolsets"])
+            self.assertNotIn("code_execution", out["toolsets"])
+
+
 class ForgeValidation(unittest.TestCase):
     def test_missing_role_fails_before_touching_disk(self):
         with tempfile.TemporaryDirectory() as t:

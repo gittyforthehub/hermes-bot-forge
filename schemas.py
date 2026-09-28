@@ -49,6 +49,12 @@ CREATE_AGENT = {
             "skill_categories": {"type": "array", "items": {"type": "string"}, "description": (
                 "skill category folders to keep enabled, e.g. ['social-media','creative']; research and web stay "
                 "on, others are disabled (not deleted)")},
+            "harness": {"type": "string", "description": (
+                "domain key for a curated expert skill set — installs the right skills from the skill registries "
+                "and disables everything else, so the Bot is genuinely expert rather than broadly general. Use "
+                "whenever the job maps to a known domain ('ios', 'trading', 'social-media', 'business-ops', "
+                "'hermes-tuning'). The domain's toolsets, sandbox and approval defaults are applied too. "
+                "Check `harness_domains` for the full list; an unknown key is reported, not silently ignored.")},
             "ack_reactions": {"type": "boolean", "description": (
                 "react to the user's message to show where a request stands (👀 picked up, ✅ done, ✋ needs "
                 "approval, ⚠️ blocked). On by default; pass false only if the user wants a silent Bot.")},
@@ -76,6 +82,20 @@ CREATE_AGENT = {
         },
         "required": [],
     },
+}
+
+HARNESS_DOMAINS = {
+    "name": "harness_domains",
+    "description": (
+        "List the curated expert harnesses available — the domains create_agent can build a genuinely expert Bot "
+        "for. Read-only. Returns each domain's key, label, summary, the skills it installs and keeps, and the "
+        "toolsets and approval defaults it applies. Call this BEFORE create_agent when the user's request maps "
+        "to a specialist domain ('make me a bot for iOS apps / trading / social media / running my business / "
+        "tuning Hermes'), then pass the matching key as `harness`. Bundled domains are the floor, not the "
+        "ceiling: any JSON manifest of your own can be passed inline as `harness_manifest` to curate a domain "
+        "that isn't listed here."
+    ),
+    "parameters": {"type": "object", "properties": {}},
 }
 
 LIST_AGENTS = {

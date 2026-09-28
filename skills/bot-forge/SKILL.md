@@ -1,7 +1,7 @@
 ---
 name: bot-forge
 description: "Design a new Hermes Bot from one sentence and spawn it with the create_agent tool. Role defaults, SOUL.md template, zero questions."
-version: 0.13.0
+version: 0.14.0
 author: Bikash Joshi
 license: MIT
 platforms: [linux, macos, windows]
@@ -94,6 +94,11 @@ In the **desktop app** the same status also lands on the user's own message as a
 The result's `workspace` block is what you report: `fits` (the places it belongs, most relevant first), `covered_by` (Bots already working in that territory), `skills_here` (already installed and worth giving it), `next_steps`. Give the user the top fit and at most two next steps — not the whole list.
 
 **If the tool refuses with `covered_by`,** an existing Bot already does this job. Do not retry blindly. Tell the user which Bot holds it and offer the two real choices: a narrower job for the new Bot, or `update_agent` on the existing one. Only pass `allow_overlap: true` after they say they want both.
+
+## Expert harnesses
+When the ask is for a Bot that is genuinely *good at a specialist domain* — iOS apps, trading, social media, running a business, tuning Hermes — call `harness_domains` first, then pass the matching key as `harness` in `create_agent`. A harness installs the domain's skills from the registries, verifies each one resolves, and disables everything outside the allowlist, so the Bot is sharp rather than broadly general. Bundled: `ios`. For any other domain, write a manifest yourself and pass it as `harness_manifest` (see `docs/expert-harnesses.md`) — one JSON object, no code.
+
+An unknown `harness` key never fails the build: the result carries a `harness.error` and the list of domains that do exist. Report a non-empty `harness.gaps` to the user — those skills could not be found, so the Bot is less expert than its label suggests.
 
 ## Sandboxes
 Any Bot you give `terminal` or `code_execution` should get `sandbox: "docker"` so its shell runs in a container instead of on the user's machine — say so in your reply. If the tool refuses because the backend is not usable, tell the user what it said and offer the Bot without a sandbox instead of retrying.

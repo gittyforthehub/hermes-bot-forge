@@ -167,9 +167,10 @@ Thirteen tools, all driven by plain requests in chat:
 
 | Tool | Say this | What it does |
 |---|---|---|
+| `harness_domains` | *"what expert bots can I make?"* | Lists the curated expert harnesses — the domains `create_agent` can build a genuinely expert Bot for, with the skills and tools each one installs. |
 | `create_team` | *"set me up a content team"* | Builds a whole team at once: a lead plus up to 6 specialists, each reporting to it. The lead learns the roster and delegates. |
 | `teach_agent` | *"remember how I write my weekly report"* | Saves a procedure as a skill the Bot keeps and loads when the job comes up. |
-| `create_agent` | *"make me a bot that writes X posts"* | Builds a Bot: name, face, SOUL.md, memory, tools, skills, routines, approvals, Bot Chat intro, gateway. |
+| `create_agent` | *"make me a bot that writes X posts"* | Builds a Bot: name, face, SOUL.md, memory, tools, skills, routines, approvals, Bot Chat intro, gateway. Pass `harness: "<domain>"` for a verified, curated skill set instead of an inherited one — see [Expert harnesses](docs/expert-harnesses.md). |
 | `update_agent` | *"make Inkwell funnier"*, *"give Atlas the browser"* | Edits a Bot in place — persona, name, description, memory, tools, skills, model, face, routines. Backs up what it replaces. |
 | `copy_agent` | *"make another one like Inkwell, for LinkedIn"* | Duplicates a Bot under a new name (no chat history, no routines). |
 | `list_agents` | *"what bots do I have?"* | Roster with description, model, routine count and hidden state. |

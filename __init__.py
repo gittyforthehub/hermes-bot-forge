@@ -18,6 +18,9 @@ def register(ctx):
                       emoji="🧪", description="Spawn a complete, working Hermes Bot from a design")
     ctx.register_tool(name="list_agents", toolset="bot_forge", schema=schemas.LIST_AGENTS,
                       handler=tools.list_agents, emoji="📋", description="List Hermes Bots on this machine")
+    ctx.register_tool(name="harness_domains", toolset="bot_forge", schema=schemas.HARNESS_DOMAINS,
+                      handler=tools.harness_domains, emoji="🧠",
+                      description="List curated expert-harness domains (read-only)")
     ctx.register_tool(name="check_install", toolset="bot_forge", schema=schemas.CHECK_INSTALL,
                       handler=tools.check_install, emoji="🩹",
                       description="Check that Bot Forge itself is set up correctly (read-only)")
