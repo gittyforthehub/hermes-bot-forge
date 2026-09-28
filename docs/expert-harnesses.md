@@ -94,14 +94,43 @@ failure. Set `optional: false` for a skill the domain genuinely cannot work with
 
 ### Design rules
 
-- **Small is the point.** A 60-skill harness is a generalist. If everything is
-  required, nothing is prioritised.
+- **List skills explicitly. Avoid broad `skill_categories`.** This is the one rule the
+  benchmark exists to enforce. Keeping a whole category pulls in everything filed under
+  it, and category membership is not expertise:
+
+  | manifest | skills kept | F1 | precision |
+  |---|---|---|---|
+  | 3 broad categories | 25 | 0.387 | 0.240 |
+  | 1 category | 17 | 0.522 | 0.353 |
+  | **explicit `skills` only** | **10** | **0.750** | **0.600** |
+
+  Use `skill_categories` only when the whole category genuinely *is* the job. Naming
+  `research` to get one web-search skill costs you `arxiv` and `llm-wiki` too.
 - **Local skills beat registry skills** for anything a project already depends on —
   Appllama's iOS design skills, for instance, are not on any public registry.
-- **Categories and skills compose.** Use `skill_categories` for a coherent body of
-  knowledge, `skills` for the specific must-haves that span categories.
 - **Mark approvals honestly.** A harness that installs a trading skill without an
   approval checkpoint is a harness that will eventually place a real order.
+
+### The benchmark
+
+```bash
+python3 bench/benchmark.py            # score stock vs harness across four domains
+python3 bench/benchmark.py --gated    # same, plus regression gates (CI runs this)
+python3 bench/benchmark.py --json     # machine-readable
+```
+
+Gold sets are written independently of the manifests, so a manifest cannot score itself.
+Domains without a bundled manifest fall back to category-only selection, which is exactly
+what an uncurated domain gets — so shipping a manifest for `trading` or `social-media`
+would show up immediately as a real improvement rather than a free pass.
+
+Current result: **mean F1 0.193 → 0.288**, precision 0.115 → 0.192, irrelevant skills
+carried 14.5 → 10.8, gold skills missed 5 → 3. Excluding the always-on floor, curated F1
+is 0.251 → 0.379.
+
+The honest limit: three of the four domains have no manifest, so the mean is dominated by
+`ios`. The number is a floor for a one-manifest plugin, not evidence that the approach
+scales — add manifests and re-run to see whether it does.
 
 ## Anything not listed
 
@@ -142,11 +171,14 @@ Two subtleties worth knowing if you read the code:
 
 ```bash
 python -m unittest discover -s tests
+python bench/benchmark.py --gated
 ```
 
 The harness suite covers inventory, allowlist planning, the external-dirs rules, the
-registry table parser, failure handling, and the `forge()` wiring. The integration tests
-stub profile creation, so the full suite runs offline in under a second.
+registry JSON parsing, failure handling, and the `forge()` wiring. The benchmark scores
+stock creation against curated selection on four domains with independently-written gold
+sets, and gates the shipped manifests so a broader manifest fails CI. The integration
+tests stub profile creation, so everything runs offline in under a second.
 
 ## Contributing a manifest
 

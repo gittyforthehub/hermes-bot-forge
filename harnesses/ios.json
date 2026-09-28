@@ -3,11 +3,7 @@
   "domain": "ios",
   "label": "Native iOS engineering",
   "summary": "Ship Swift and SwiftUI work that is built, tested and observed — real xcodebuild runs, XCTest, simulator verification, and honest reporting of device-only gates.",
-  "skill_categories": [
-    "software-development",
-    "planner",
-    "reviewer"
-  ],
+  "skill_categories": [],
   "skills": [
     "ios-app-delivery",
     "test-driven-development",

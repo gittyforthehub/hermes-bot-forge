@@ -9,6 +9,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Expert harnesses: a Bot whose skills were chosen and verified, not inherited.** Stock creation clones a profile and disables what you didn't name, which yields a large, mostly-irrelevant skill set. Passing `harness: "<domain>"` to `create_agent` resolves a curated manifest instead, installs anything missing from the skill registries, verifies every skill actually resolves, and reduces the profile to that allowlist. `harness_domains` lists what's available; any JSON manifest can be passed inline as `harness_manifest` to curate a domain that isn't bundled. See `docs/expert-harnesses.md` and `harnesses/`.
 - The first bundled harness: **`ios`** — native iOS engineering, with the App Store / signing / device-permission approvals a real iOS Bot needs.
 - Curation reports honestly. `create_agent` returns a `harness` block with kept skills, the disabled count, and a `gaps` list for anything that couldn't be found or installed. A missing skill is never silently dropped.
+- `bench/benchmark.py` scores curated selection against stock creation across four domains, using gold sets written independently of the manifests so a manifest cannot score itself. `--gated` adds regression thresholds, and CI runs it.
+
+### Changed
+- **The bundled `ios` manifest no longer names broad `skill_categories`.** The benchmark measured the original three-category version at F1 0.387 — it kept 25 skills to cover 6 that mattered, because `research` drags in `arxiv` and `llm-wiki` whether or not an iOS engineer needs them. Listing the six skills explicitly scores 0.750 and cuts the set to 10. Category membership is not expertise; this is now the first design rule in `docs/expert-harnesses.md`.
 
 ### Fixed
 - **A profile's `skills.external_dirs` are loadable, and the curator now knows it.** Shared and OMH skill roots were invisible to skill resolution, so every shared skill was misreported as missing and re-installed for no reason. They now count as available — and, correctly, are never added to the profile's disable list, since they belong to whoever owns them.
