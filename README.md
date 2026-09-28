@@ -49,8 +49,12 @@ $EDITOR ~/.hermes/shared/BOT-POLICY.md   # edit once
 check_policies                            # → which Bots are now stale
 ```
 
-`check_policies` reports `stale` (built before your edit) and `no_shared_policy` (opted out),
-read-only. A Bot can opt out with `"shared_policy": false` in its spec.
+`check_policies` reports `stale` (built before your edit), `no_shared_policy` (opted out),
+and `unreadable`, read-only. A Bot can opt out with `"shared_policy": false` in its spec.
+
+To bring a stale Bot up to date, run `update_agent` with `refresh_shared_policy: true` — it
+re-injects the policy in place and keeps the Bot's identity and persona. (`create_agent`
+refuses a name that is already taken, so re-running it is not how you refresh an existing Bot.)
 
 This borrows the *discipline* from [steipete/agent-scripts](https://github.com/steipete/agent-scripts)
 — one canonical file, change once — but not its symlink mechanism, because a symlinked

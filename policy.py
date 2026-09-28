@@ -28,13 +28,16 @@ runtime dependency), and forge records what it injected. `check_policies` then r
 Bot whose shared block has drifted from the canonical file — the drift becomes visible
 instead of silent.
 
-The symlink path is kept available for users who want the live-pointer semantics anyway,
-but it is opt-in and never the default: it deliberately trades a guaranteed-loaded policy
-for a single source of truth.
+Hermes does follow symlinks when it reads context files (verified against
+`prompt_builder._read_context_file` and `context_file_sources`, including the broken-link and
+self-referential-loop cases, both of which degrade to empty content rather than hanging). That
+is why a symlinked SOUL.md *would* work mechanically — and it is still the wrong default, for
+the two reasons above. There is no opt-in symlink mode; inlining is the only mechanism.
 """
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from pathlib import Path
 
@@ -101,9 +104,39 @@ _BLOCK = re.compile(
 )
 
 
+class PolicyPathError(ValueError):
+    """A shared-policy path that points outside the Hermes root."""
+
+
 def policy_path(hermes_root: Path, relative: str | None = None) -> Path:
-    """Where the canonical shared policy lives for a given Hermes root."""
-    return Path(hermes_root) / (relative or DEFAULT_RELATIVE)
+    """Where the canonical shared policy lives for a given Hermes root.
+
+    `relative` is constrained to the Hermes root. It reaches here from a spec, and
+    `create_agent` merges template keys over the spec — so a `.botforge.json` downloaded from
+    a gist could otherwise name any file on the machine and have its contents copied into a
+    new Bot's system prompt, or written to if it did not exist. The policy file is content
+    that goes straight into a prompt, so an unconstrained path is a read-and-inline primitive,
+    not a convenience.
+
+    Containment is checked on the *lexical* path (what was written in the spec), not on
+    `resolve()`. Resolving follows symlinks, and a perfectly legitimate
+    `shared/BOT-POLICY.md` that is a symlink into another location — or a Hermes root that is
+    itself reached through a symlink, which is common — would then be rejected as an escape,
+    breaking the feature for the reason it exists. A symlinked leaf is a deliberate,
+    visible choice by the user; a `../` in a downloaded template is not.
+    """
+    root = Path(hermes_root).expanduser()
+    candidate = (root / (relative or DEFAULT_RELATIVE)).expanduser()
+    try:
+        lex = Path(os.path.normpath(str(candidate)))
+    except (OSError, ValueError) as exc:
+        raise PolicyPathError(f"bad shared policy path {candidate}: {exc}") from exc
+    root_lex = Path(os.path.normpath(str(root)))
+    if lex != root_lex and root_lex not in lex.parents:
+        raise PolicyPathError(
+            f"shared policy path escapes the Hermes root: {candidate} is outside {root}"
+        )
+    return candidate
 
 
 def policy_body(text: str) -> str:
@@ -128,6 +161,14 @@ def policy_body(text: str) -> str:
     # people learn to ignore.
     body = re.sub(r"(?m)^[ \t]*<!--.*?-->[ \t]*\n?", "", body)
     body = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL)
+    # Normalise the remaining cosmetic differences: a CRLF checkout, trailing whitespace, and
+    # a different bullet marker all say the same thing. Without this, saving the policy on a
+    # Windows editor marked *every* Bot stale, which is the fastest way to make a drift
+    # report something people stop reading.
+    body = body.replace("\r\n", "\n").replace("\r", "\n")
+    body = "\n".join(line.rstrip() for line in body.split("\n"))
+    body = re.sub(r"(?m)^[ \t]*[-*+][ \t]+", "- ", body)
+    body = re.sub(r"(?m)^[ \t]*(\d+)[.)][ \t]+", r"\1. ", body)
     return re.sub(r"\n{3,}", "\n\n", body).strip()
 
 
@@ -150,6 +191,17 @@ def extract_block(soul: str) -> str | None:
     """The shared-policy block from a SOUL.md, or None if it has none."""
     m = _BLOCK.search(soul or "")
     return m.group(0) if m else None
+
+
+def strip_block(soul: str) -> str:
+    """The SOUL.md with the shared-policy block (markers included) removed.
+
+    Use this before any analysis that assumes the Bot's own content starts at the top —
+    heading detection, identity rewriting, role extraction. The block is generated, and a
+    reader that treats `<!-- forge:... -->` as the persona's first line silently loses the
+    role and can leave a second identity in the file.
+    """
+    return _BLOCK.sub("", soul or "")
 
 
 def inject(text: str, soul: str, *, position: str = "top") -> str:
@@ -196,7 +248,12 @@ def audit_soul(soul: str, expected_fp: str | None) -> dict:
     }
 
 
-def shared_policy_dir_note(relative: str) -> str:
-    """The one-line pointer a human can put in a repo, mirroring the agent-scripts pattern."""
+def policy_dir_note(relative: str) -> str:
+    """The one-line pointer a human can put in a repo, mirroring the agent-scripts pattern.
+
+    Not used by the plugin — it is here so a user wiring the same discipline into a
+    *repository's* AGENTS.md has the canonical wording to copy, and so the pattern is
+    documented in code rather than only in prose.
+    """
     return (f"READ ~/.hermes/{relative} BEFORE ANYTHING (skip if missing). "
             f"Repo-specific rules go below this line — do not copy the shared block here.")

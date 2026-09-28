@@ -32,28 +32,66 @@ before your edit holds the old text — so drift has to be *visible*, which is w
 
 Hermes does follow symlinks when it reads context files (verified against
 `prompt_builder._read_context_file` and `context_file_sources`, including the broken-link and
-self-referential-loop cases, both of which degrade to empty content rather than hanging). The
-symlink path is available if you want live-pointer semantics; it is opt-in, never the
-default, and it deliberately trades a guaranteed-loaded policy for a single source of truth.
+self-referential-loop cases, both of which degrade to empty content rather than hanging). That
+is why a symlinked `SOUL.md` *would* work mechanically — and it is still the wrong default, for
+the two reasons above. There is no opt-in symlink mode; inlining is the only mechanism.
 
-## The drift check
+## What reads a SOUL.md
+
+Because the block sits above the persona, anything that assumes the `# Name — Role` heading is
+line 1 has to skip it. `forge.soul_role()` and `forge.ensure_identity()` both do, via
+`forge._persona()`, and `ensure_identity` re-injects the block afterwards so a rename never
+drops a Bot's house rules. A `SOUL.md` with no block is treated as all-persona, so a Bot built
+before this feature does not acquire one on its next edit.
+
+This is not hypothetical: with the block on line 1 and no skip, `copy_agent` produced a Bot
+that introduced itself as "the Bot" instead of its role, and `share_agent` exported no role at
+all, so the archive could not be imported. Both are regression-tested.
+
+## Refreshing a stale Bot
+
+`create_agent` refuses a name that is already taken, so re-running it does **not** refresh an
+existing Bot. To bring one up to date after editing the policy file, use
+`update_agent` with `refresh_shared_policy`:
+
+```json
+{"op": "update", "name": "sable", "refresh_shared_policy": true}
+```
+
+That re-injects the current policy into that Bot's `SOUL.md` in place, keeping its identity,
+persona, approvals and journal block, and backing up the file first. It is idempotent — a Bot
+that is already current reports `already current` and nothing is written. It refuses a policy
+path that points outside the Hermes root, and refuses a policy file with no rules in it.
+
+`update_agent(soul_md=...)` is *not* a way to refresh the policy: it replaces the whole file
+and the block goes with it.
+
+## What the drift check reports
 
 `check_policies` compares each Bot's inlined block against the canonical file by
 fingerprint, and returns:
 
-- `stale` — built before your latest edit; rebuild them
+- `stale` — built before your latest edit
 - `no_shared_policy` — built with `shared_policy: false`, or before this feature existed
+- `unreadable` — the file could not be read; these are reported, not silently counted as fine
 - `bots` — per-Bot `current`, `reason`, and both fingerprints
 
-Only the policy **body** is hashed, with fence markers and comments removed and blank-line
-runs collapsed. Two consequences worth knowing:
+The `default` profile is included: its `SOUL.md` lives at the Hermes root, not under
+`profiles/`.
 
-- Editing a comment is not a policy change. Reformatting the file will not mark every Bot
-  stale — a drift report that fires on cosmetics is a report people learn to ignore, and then
-  it stops being a report.
+Only the policy **body** is hashed. Fence markers and comments are removed, blank-line runs
+are collapsed, and cosmetic differences are normalised — CRLF line endings, trailing
+whitespace, and `-` / `*` / `+` bullet markers all hash the same. Two consequences:
+
+- Editing a comment, or saving the file from an editor that uses CRLF, is not a policy change.
+  A drift report that fires on cosmetics is one people learn to ignore, and then it stops
+  being a report.
 - A Bot's persona, identity, and approvals are *outside* the fence, so giving a Bot a new
   name or role does not make it look stale, and a shared rule that happens to mention a Bot
   name does not pin that Bot's copy to a particular edit.
+
+A file containing **only comments** is rejected rather than inlined: it would build Bots with
+no rules at all, and by the metric above it is indistinguishable from an empty policy.
 
 ## Opting out
 

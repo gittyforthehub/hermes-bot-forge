@@ -178,9 +178,42 @@ def guardrails_block(approvals, reports_to) -> str:
 IDENTITY_LINE = re.compile(r"^You are \*\*[^*\n]+\*\*.*$\n?", re.M)
 
 
+def has_block(soul: str) -> bool:
+    """Does this SOUL.md carry a generated shared-policy block?
+
+    A SOUL.md without one is a Bot built before this feature (or one that opted out), and
+    must be treated as all-persona — that is what keeps `ensure_identity` from inventing a
+    policy block out of the persona itself.
+    """
+    try:
+        import policy as policy_mod
+    except ImportError:
+        return False
+    return policy_mod.extract_block(soul) is not None
+
+
+def _persona(soul: str) -> str:
+    """The Bot's own content, with any generated shared-policy block removed.
+
+    `create_agent` inlines the shared policy above the persona, so line 1 of a built
+    SOUL.md is `<!-- forge:shared-policy:begin -->`, not the `# Name — Role` heading.
+    Every reader that assumes the persona starts at the top must skip it: `soul_role`
+    otherwise returns '' and `ensure_identity` rebuilds the file around a marker comment,
+    which is how a copied Bot ended up introducing itself as "the Bot" instead of its
+    role while the original heading survived underneath.
+    """
+    if not has_block(soul):
+        return soul or ""
+    try:
+        import policy as policy_mod
+    except ImportError:
+        return soul or ""
+    return policy_mod.strip_block(soul or "")
+
+
 def soul_role(soul: str) -> str:
     """Role from a '# Name — Role' heading, if the persona has one."""
-    first = (soul or "").lstrip().split("\n", 1)[0]
+    first = _persona(soul).lstrip().split("\n", 1)[0]
     m = re.match(r"#\s*[^—\-\n]+\s[—-]\s+(.+)$", first)
     return m.group(1).strip() if m else ""
 
@@ -189,19 +222,32 @@ def ensure_identity(soul: str, display: str, role: str, profile_id: str) -> str:
     """Give the persona exactly one identity: the heading and a single 'You are **Name**' line.
     Earlier identity lines (from a template, a copy or a rename) are replaced, never stacked — two names in
     one SOUL.md is how a Bot ends up introducing itself as someone else."""
-    lines = IDENTITY_LINE.findall(soul or "")
-    heading = (soul or "").lstrip().split("\n", 1)[0]
+    persona = _persona(soul)
+    had_block = has_block(soul)
+    lines = IDENTITY_LINE.findall(persona)
+    heading = persona.lstrip().split("\n", 1)[0]
     heading_ok = not heading.startswith("#") or re.match(rf"#\s*{re.escape(display)}\b", heading)
     if len(lines) == 1 and lines[0].startswith(f"You are **{display}**") and heading_ok:
         return soul  # already exactly one, correct identity — keep the author's wording
-    role = soul_role(soul) or role
-    body = IDENTITY_LINE.sub("", soul or "")
+    role = soul_role(persona) or role
+    body = IDENTITY_LINE.sub("", persona)
     identity = (f"You are **{display}**, the {role} of this Hermes deployment (profile `{profile_id}`). "
                 f"Always introduce yourself as {display}.\n")
     head, _, rest = body.lstrip().partition("\n")
     if head.startswith("#"):
-        return f"# {display} — {role}\n\n{identity}\n{rest.lstrip()}"
-    return f"{identity}\n{body.lstrip()}"
+        rebuilt = f"# {display} — {role}\n\n{identity}\n{rest.lstrip()}"
+    else:
+        rebuilt = f"{identity}\n{body.lstrip()}"
+    # Put the policy back, so rebuilding a Bot's identity never drops its house rules.
+    # Only when one was there: a SOUL.md with no block must not gain one, or every
+    # pre-existing Bot would be handed a policy on its next rename.
+    if not had_block:
+        return rebuilt
+    try:
+        import policy as policy_mod
+    except ImportError:
+        return rebuilt
+    return policy_mod.inject(policy_mod.policy_body(soul), rebuilt)
 
 
 def filter_user_memory(text: str, other_names: set) -> str:
@@ -565,7 +611,12 @@ def forge(s: dict) -> dict:
     if s.get("shared_policy", True):
         import policy as policy_mod
 
-        pol = policy_mod.policy_path(root, s.get("shared_policy_path"))
+        try:
+            pol = policy_mod.policy_path(root, s.get("shared_policy_path"))
+        except policy_mod.PolicyPathError as exc:
+            # Refuse rather than read it. The path may have come from a template, and the
+            # file's contents go straight into the new Bot's system prompt.
+            return {"ok": False, "error": str(exc)[:200], "rolled_back": False}
         if not pol.exists():
             if not s.get("shared_policy_create", True):
                 return {"ok": False, "error": f"shared policy not found: {pol}", "rolled_back": False}
@@ -581,8 +632,15 @@ def forge(s: dict) -> dict:
         except OSError as exc:
             return {"ok": False, "error": f"could not read shared policy {pol}: {exc}"[:200],
                     "rolled_back": False}
+        # Reject on the policy *body*, not on text.strip(): a file containing only comments
+        # strips to something non-empty but hashes identically to an empty policy, so Bots
+        # would be built carrying no rules while the drift report called them current.
         if not text.strip():
             return {"ok": False, "error": f"shared policy is empty: {pol}", "rolled_back": False}
+        if not policy_mod.policy_body(text):
+            return {"ok": False,
+                    "error": f"shared policy has no rules, only comments: {pol}"[:200],
+                    "rolled_back": False}
         soul = policy_mod.inject(text, soul)
         shared_policy = {"path": str(pol), "fingerprint": policy_mod.fingerprint(text)}
     if shared_policy:
@@ -779,6 +837,7 @@ def forge(s: dict) -> dict:
                 "skills_disabled": len(disabled), "routines": routines, "gateway": gateway, "intro": reply[-600:],
                 "journal": journal_path, "reactions": marks, "workspace": workspace,
                 "harness": harness,
+                "shared_policy": s.get("shared_policy_applied"),
                 "note": "done — it already introduced itself. Do not message, test or change this Bot; just report."}
     except Exception as e:
         rolled_back = False

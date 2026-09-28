@@ -90,6 +90,36 @@ def op_update(s: dict, root: Path, settings: dict) -> dict:
     # persona
     soul_path = pdir / "SOUL.md"
     soul = soul_path.read_text() if soul_path.exists() else ""
+
+    # shared policy refresh. This is the documented fix for a stale Bot, and it has to exist
+    # as a real operation: create_agent refuses a name that is already taken, so telling
+    # someone to "re-run create_agent" for an existing Bot never converges.
+    if s.get("refresh_shared_policy"):
+        import policy as policy_mod
+
+        root = Path(s.get("hermes_root") or Path.home() / ".hermes")
+        rel = s.get("shared_policy_path") or policy_mod.DEFAULT_RELATIVE
+        try:
+            pol = policy_mod.policy_path(root, rel)
+        except policy_mod.PolicyPathError as exc:
+            raise ValueError(str(exc))
+        if not pol.exists():
+            raise ValueError(f"no shared policy at {pol}")
+        try:
+            text = pol.read_text(errors="replace")
+        except OSError as exc:
+            raise ValueError(f"could not read shared policy {pol}: {exc}")
+        if not policy_mod.policy_body(text):
+            raise ValueError(f"shared policy has no rules, only comments: {pol}")
+        refreshed = policy_mod.inject(text, soul)
+        if policy_mod.fingerprint(refreshed) == policy_mod.fingerprint(soul):
+            changed.append("shared_policy (already current)")
+        else:
+            backups["SOUL.md"] = _backup(pdir, "SOUL.md")
+            soul_path.write_text(refreshed)
+            soul = refreshed
+            changed.append("shared_policy")
+
     new_soul = s.get("soul_md")
     append = s.get("soul_append")
     if new_soul or append:

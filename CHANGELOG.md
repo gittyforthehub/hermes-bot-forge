@@ -3,6 +3,64 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-09-28
+
+An independent adversarial review of the shared-policy feature returned `no_ship`. Two of its
+findings were data-corruption regressions in existing features, and one was a read-and-inline
+primitive reachable from a downloaded template. All are fixed, each with a regression test, and
+`bench/shared_policy_mutation_check.py` reverts all nine fixes and requires the suite to catch
+every one.
+
+### Fixed
+- **`copy_agent` produced a Bot with two identities and the wrong role.** The policy block is
+  injected at the top of `SOUL.md`, so line 1 became `<!-- forge:shared-policy:begin -->`.
+  `forge.soul_role()` and `forge.ensure_identity()` both read line 1, so a copy rebuilt the file
+  around the marker comment: the copy introduced itself as "the Bot" instead of its role while
+  the original heading survived underneath. That is exactly the failure `ensure_identity` was
+  written to prevent — its own docstring says so. Both functions now read the persona with the
+  block stripped, and `ensure_identity` re-injects the block so a rename never drops it. A
+  `SOUL.md` with no block is treated as all-persona, so pre-existing Bots do not acquire one.
+- **`share_agent` → `import_agent` was broken for every Bot with a policy.** `portable.py`
+  derives the exported template's `role` from `soul_role()`, which returned `''` once the block
+  was present, and `forge` then rejected the import with "spec needs at least 'role'". A Bot
+  built with a shared policy could be shared but not imported — while `share_agent` advertises
+  the result as safe to post as a gist.
+- **`shared_policy_path` could read any file on the machine.** It reached `forge` from a spec,
+  and `create_agent` merges template keys over the spec, so a `.botforge.json` downloaded from a
+  gist could name any path and have its contents inlined verbatim into a new Bot's system
+  prompt — or written to, since a missing target was created. Paths are now constrained to the
+  Hermes root. The check is *lexical*, not `resolve()`: resolving follows symlinks and would
+  reject a user's own symlinked policy, and any Hermes root reached through a symlink. A `../`
+  in a downloaded template is not a deliberate choice; a symlink is.
+- **`check_policies` crashed on a non-UTF-8 file.** `UnicodeDecodeError` is a `ValueError`, not
+  an `OSError`, so it escaped the `except OSError` around `read_text()` and raised out of a tool
+  documented as read-only. One latin-1 apostrophe in a hand-edited `SOUL.md` was enough.
+- **`check_policies` counted unreadable Bots as current.** `current` was computed as
+  `checked - stale - without`, and a row that errored belonged to neither list — so it inflated
+  `current` and the Bot appeared in no list at all. Now counted from the rows, with an explicit
+  `unreadable` list. The `default` profile is also audited; its `SOUL.md` is at the Hermes root
+  rather than under `profiles/`, so a stale default Bot was never reported.
+- **A comments-only policy built Bots with no rules and reported them current.** The guard was
+  `text.strip()`, which is truthy for a comments-only file, and `policy_body()` strips comments
+  — so such a file hashed identically to an empty policy. Both the build and the check now
+  reject a policy with no rules in it.
+- **Cosmetic reformatting marked every Bot stale.** Only comments and blank-line runs were
+  normalised, so a CRLF checkout, trailing whitespace, or a `*` bullet each looked like a
+  changed rule — a Windows user editing the policy would see every Bot go stale at once. The
+  fingerprint now normalises line endings, trailing whitespace, and bullet markers.
+- **The documented fix for a stale Bot did not work.** `check_policies` said "re-run
+  create_agent", but `create_agent` refuses a name that is already taken, so the advice could
+  never converge. `update_agent` now takes `refresh_shared_policy: true`, which re-injects the
+  policy in place, preserves identity and persona, backs the file up first, and is idempotent.
+
+### Corrected
+- The docs described an opt-in symlink mode that was never built. There is no `os.symlink` call
+  and no schema key; inlining is the only mechanism. The docstring and design note now say so.
+
+### Added
+- `bench/shared_policy_mutation_check.py`, in CI: reverts all nine fixes above and requires the
+  suite to catch each one.
+
 ## [0.15.2] - 2026-09-28
 
 ### Fixed

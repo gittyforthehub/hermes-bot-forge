@@ -22,9 +22,8 @@ MUTATIONS = [
 
     ("M2", "comments not stripped, so a comment-only edit looks like drift",
      'body = re.sub(r"(?m)^[ \\t]*<!--.*?-->[ \\t]*\\n?", "", body)\n'
-     '    body = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL)\n'
-     '    return re.sub(r"\\n{3,}", "\\n\\n", body).strip()',
-     "    return body.strip()"),
+     '    body = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL)',
+     "    pass"),
 
     ("M3", "inject always appends, so rebuilds accumulate duplicate blocks",
      'body = _BLOCK.sub("", soul or "").lstrip()\n'

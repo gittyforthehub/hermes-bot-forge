@@ -139,6 +139,13 @@ UPDATE_AGENT = {
         "properties": {
             "name": {"type": "string", "description": "profile name or Bot title from list_agents"},
             "soul_append": {"type": "string", "description": "markdown appended to its SOUL.md (preferred for small changes)"},
+            "refresh_shared_policy": {
+                "type": "boolean",
+                "description": "re-inject the current shared operating policy into this Bot's SOUL.md, in place. "
+                               "Use this after the user edits ~/.hermes/shared/BOT-POLICY.md and you want a Bot "
+                               "up to date — create_agent cannot refresh an existing Bot because its name is "
+                               "taken. Keeps the Bot's identity, persona and approvals, and backs SOUL.md up first.",
+            },
             "soul_md": {"type": "string", "description": "complete replacement SOUL.md — only for a full rewrite"},
             "role": {"type": "string", "description": "role title, used if the identity line has to be rewritten"},
             "display_name": {"type": "string", "description": "new Proper Case display name in the roster"},
