@@ -33,16 +33,35 @@ def _run(args: list[str], root: Path, timeout: int = TIMEOUT):
 
 
 def _json_from(text: str):
-    """Extract and parse the first JSON array/object in CLI output, tolerating log noise."""
+    """Extract and parse the first JSON array/object in CLI output, tolerating log noise.
+
+    Uses `raw_decode` so a trailing epilogue — `[1/3] installing` before the payload, or
+    `Updated 1 skill in 0.4s` after it — does not invalidate the whole parse. A successful
+    CLI call reported as an empty registry is the worst possible failure: the caller is told
+    its query was wrong when the registry answered it.
+    """
     if not text:
         return None
-    starts = [i for i in (text.find("["), text.find("{")) if i != -1]
-    if not starts:
-        return None
-    try:
-        return json.loads(text[min(starts):])
-    except ValueError:
-        return None
+    # A CLI progress line like "[1/3] installing" opens with a bracket, so the FIRST bracket
+    # is not necessarily the payload. Scan every bracket/brace position in order and take
+    # the first one that decodes to a list or object.
+    candidates = sorted(i for i in (text.find("["), text.find("{")) if i != -1)
+    for ch in ("[", "{"):
+        start = 0
+        while True:
+            i = text.find(ch, start)
+            if i == -1:
+                break
+            candidates.append(i)
+            start = i + 1
+    for start in sorted(set(candidates)):
+        try:
+            value, _end = json.JSONDecoder().raw_decode(text[start:])
+        except ValueError:
+            continue
+        if isinstance(value, (list, dict)):
+            return value
+    return None
 
 
 def _norm(row: dict) -> dict:

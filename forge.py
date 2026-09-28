@@ -471,13 +471,49 @@ def forge(s: dict) -> dict:
     # Expert harness: resolve a curated skill manifest for this domain before the overlap guard,
     # so the guard compares against the skills the Bot will actually have.
     harness = None
-    domain = s.get("harness") or s.get("domain")
-    if domain:
+    # An inline `harness_manifest` is its own request, not a modifier of `harness`. Resolving
+    # it inside the domain guard meant a spec carrying only `harness_manifest` built an
+    # uncurated Bot and returned ok:true — the user was told they got an expert and got a
+    # generalist. That is the one path the docs push for every domain that does not ship.
+    inline_manifest = s.get("harness_manifest")
+    # A string is a valid manifest form, so parse it before anything reads a key off it.
+    if isinstance(inline_manifest, str):
+        try:
+            inline_manifest = json.loads(inline_manifest)
+        except json.JSONDecodeError as exc:
+            return {"ok": False, "error": f"harness_manifest is not valid JSON: {exc}"[:200]}
+    # Absent vs present-but-wrong: `None` means no inline manifest at all, which is the
+    # ordinary path. Treating it as a bad value rejected every harness build.
+    if inline_manifest is None:
+        inline_manifest = {}
+    if inline_manifest and not isinstance(inline_manifest, dict):
+        return {"ok": False, "error": "harness_manifest must be a JSON object"}
+    domain = s.get("harness") or s.get("domain") or inline_manifest.get("domain")
+    if domain or inline_manifest:
         try:
             import harness as harness_mod
 
-            manifest = s.get("harness_manifest") or harness_mod.load_manifest(domain, root)
-            if manifest:
+            manifest = inline_manifest or harness_mod.load_manifest(str(domain or ""), root)
+            if not manifest:
+                # An explicit manifest that cannot be read is an error, not a no-op: the
+                # caller asked for curation and must not receive an uncurated Bot silently.
+                if inline_manifest:
+                    err = ("harness_manifest has no 'skills' key — an expert must name at "
+                           "least one skill; use a domain manifest from harnesses/ for a "
+                           "ready-made set")
+                else:
+                    err = f"no harness manifest for '{domain}'"
+                harness = {"domain": domain, "error": err, "available": harness_mod.available_domains()}
+            elif not harness_mod._name_list(manifest.get("skills")) and not harness_mod._name_list(
+                    manifest.get("skill_categories")):
+                # A manifest that names no skills and no categories would happily build a Bot
+                # with nothing but the floor — a "harness" that curates to zero. Report it
+                # rather than shipping a generalist under a specialist's name.
+                harness = {"domain": domain, "error":
+                           "harness_manifest names no skills and no skill_categories — an "
+                           "expert must specify at least one skill",
+                           "available": harness_mod.available_domains()}
+            else:
                 harness = {"domain": manifest.get("domain"), "label": manifest.get("label"),
                            "manifest": manifest}
                 if not s.get("skill_categories"):
@@ -487,11 +523,13 @@ def forge(s: dict) -> dict:
                 defaults = manifest.get("defaults") or {}
                 if not s.get("sandbox") and defaults.get("sandbox"):
                     s["sandbox"] = defaults["sandbox"]
-                if s.get("approvals") is None and defaults.get("approvals"):
-                    s["approvals"] = list(defaults["approvals"])
-            elif s.get("harness_manifest") is None:
-                harness = {"domain": domain, "error": f"no harness manifest for '{domain}'",
-                           "available": harness_mod.available_domains()}
+                if s.get("approvals") is None:
+                    # Accept `approvals` at the top level too. It was documented there in the
+                    # README, so a manifest copied from it silently lost every approval
+                    # prompt — which for the iOS harness means no App Store or signing gate.
+                    approvals = defaults.get("approvals") or manifest.get("approvals")
+                    if approvals:
+                        s["approvals"] = list(approvals)
         except Exception as exc:
             harness = {"domain": domain, "error": f"harness resolution skipped: {exc}"[:200]}
     # Two Bots with the same job is what makes a roster useless. Check before building, not after.
@@ -641,11 +679,20 @@ def forge(s: dict) -> dict:
                 cfg = load_yaml(cfg_path)
                 hresult = harness_mod.plan(pdir, manifest, cfg)
                 if hresult["missing"] and settings.get("harness_install", True):
+                    # A missing skill is a *local* name (ios-app-delivery), but `hermes skills
+                    # install` needs a path-shaped registry identifier (org/repo/skill). Passing
+                    # the name straight through could never succeed, so look it up first. The
+                    # old loop hardcoded one category and stopped after a single success, so at
+                    # most one repair ever ran and the rest were silently reported as gaps.
                     for name in list(hresult["missing"]):
-                        if registry_mod.install(name, category="software-development", root=root).get("status") == "installed":
-                            cfg = load_yaml(cfg_path)
-                            hresult = harness_mod.plan(pdir, manifest, cfg)
-                            break
+                        hit = harness_mod.resolve_registry_skill(
+                            registry_mod, {"query": name, "optional": False})
+                        if hit.get("status") == "resolved" and hit.get("identifier"):
+                            outcome = registry_mod.install(hit["identifier"], hit.get("category"),
+                                                           hit.get("name"), root=root)
+                            if outcome.get("status") == "installed":
+                                cfg = load_yaml(cfg_path)
+                                hresult = harness_mod.plan(pdir, manifest, cfg)
                 cfg = harness_mod.apply_plan(cfg, hresult, set((s.get("taught_skills") or {}).keys()))
                 dump_yaml(cfg_path, cfg)
                 harness = harness_mod.report(manifest, hresult, entries)

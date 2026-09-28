@@ -287,6 +287,19 @@ noise before the payload
         self.assertIsInstance(data, list)
         self.assertEqual(len(data), 2)
 
+    def test_trailing_output_does_not_discard_a_valid_payload(self):
+        # `hermes` CLIs print an epilogue around the JSON. Parsing the whole remainder meant
+        # a successful search came back as an empty registry, which the harness then reported
+        # to the user as "not found in registry" — the one status a contributor reads as
+        # "my query is wrong". Wrong about the code, wrong about the user.
+        for text in ('[{"name":"swiftui"}]\nUpdated 1 skill in 0.4s',
+                     '[1/3] installing\n[{"name":"swiftui","identifier":"o/r/swiftui"}]',
+                     'searching...\n[{"name":"a"},{"name":"b"}]\ndone in 1.2s\n',
+                     '{"name":"single"} trailing'):
+            data = registry._json_from(text)
+            self.assertIsNotNone(data, f"failed to parse {text!r}")
+            self.assertTrue(data)
+
     def test_garbage_input_yields_none(self):
         self.assertIsNone(registry._json_from("no json here"))
         self.assertIsNone(registry._json_from(""))
@@ -411,10 +424,27 @@ class ExternalDirsTests(unittest.TestCase):
     def test_essential_skill_is_never_disabled(self):
         # Hermes ignores a disable for `hermes-agent`, so curating against it would
         # report a disable that silently never takes effect.
-        make_skill(self.profile / "skills", "hermes-agent", "Use when configuring Hermes.")
+        # The fixture's frontmatter `name:` must actually BE `hermes-agent`. Writing the
+        # description there instead produced a skill literally named "Use when configuring
+        # Hermes.", which never collided with the protected name — so this test passed
+        # even with the guard removed, and proved nothing.
+        make_skill(self.profile / "skills", "hermes-agent", "hermes-agent")
         r = harness.plan(self.profile, {"skills": ["ios-app-delivery"], "skill_categories": []}, self.cfg())
         self.assertNotIn("hermes-agent", r["disabled"])
         self.assertIn("hermes-agent", harness.NEVER_DISABLE, "the guard must name what it protects")
+
+    def test_never_disable_guard_is_load_bearing(self):
+        # Proves the guard above is real: with NEVER_DISABLE emptied, `hermes-agent` lands
+        # in `disabled`. Without this, the test above could pass on a broken guard.
+        saved = harness.NEVER_DISABLE
+        try:
+            harness.NEVER_DISABLE = frozenset()
+            make_skill(self.profile / "skills", "hermes-agent", "hermes-agent")
+            r = harness.plan(self.profile, {"skills": ["ios-app-delivery"], "skill_categories": []}, self.cfg())
+            self.assertIn("hermes-agent", r["disabled"],
+                          "with the guard removed the protected skill is disabled, so the guard works")
+        finally:
+            harness.NEVER_DISABLE = saved
 
     def test_local_skill_wins_over_external_of_same_name(self):
         make_skill(self.shared, "grounded-citations-override", "ios-app-delivery")

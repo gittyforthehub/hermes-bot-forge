@@ -7,6 +7,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent))
@@ -271,6 +272,80 @@ class ForgeHarnessWiring(unittest.TestCase):
             self.assertEqual(out["harness"]["domain"], "beekeeping")
             self.assertEqual(out["harness"]["label"], "Beekeeping")
 
+    def test_inline_manifest_alone_curates_without_a_harness_key(self):
+        # The documented path for every domain that does not ship: a manifest with no
+        # `harness` key. It used to resolve domain to None, skip the whole block, and
+        # return ok:true with no curation — the user got a generalist and no error.
+        with tempfile.TemporaryDirectory() as t:
+            root = make_root(Path(t))
+            manifest = {"domain": "beekeeping", "label": "Beekeeping", "summary": "hives",
+                        "skills": ["stocks"], "skill_categories": ["finance"], "toolsets": ["file"]}
+            out = self._run(self._spec(root, harness_manifest=manifest), root)
+            self.assertTrue(out["ok"], out.get("error"))
+            self.assertIsNotNone(out["harness"], "an inline manifest must produce a harness block")
+            self.assertNotIn("error", out["harness"])
+            self.assertEqual(out["harness"]["domain"], "beekeeping")
+
+    def test_manifest_without_skills_is_reported_not_ignored(self):
+        with tempfile.TemporaryDirectory() as t:
+            root = make_root(Path(t))
+            out = self._run(self._spec(root, harness_manifest={"domain": "empty", "label": "E"}), root)
+            self.assertIn("error", out["harness"])
+            self.assertIn("skills", out["harness"]["error"])
+
+    def test_manifest_string_form_is_accepted(self):
+        # An agent may hand the manifest over as a JSON string rather than an object.
+        with tempfile.TemporaryDirectory() as t:
+            root = make_root(Path(t))
+            manifest = {"domain": "beekeeping", "label": "Beekeeping", "summary": "hives",
+                        "skills": ["stocks"], "skill_categories": ["finance"]}
+            out = self._run(self._spec(root, harness_manifest=json.dumps(manifest)), root)
+            self.assertTrue(out["ok"], out.get("error"))
+            self.assertEqual(out["harness"]["domain"], "beekeeping")
+
+    def test_top_level_approvals_are_honored(self):
+        # The README's contribution example put approvals at the top level; forge only read
+        # defaults.approvals, so a manifest copied from the README lost every approval prompt.
+        with tempfile.TemporaryDirectory() as t:
+            root = make_root(Path(t))
+            manifest = {"domain": "trading", "label": "Trading", "summary": "s",
+                        "skills": ["stocks"], "approvals": ["Any order placement"]}
+            out = self._run(self._spec(root, harness_manifest=manifest), root)
+            self.assertIn("Any order placement", out["approvals"])
+
+    def test_missing_skill_repair_uses_a_resolved_registry_identifier(self):
+        # A missing skill is a *local* name (ios-app-delivery); `hermes skills install` needs a
+        # path-shaped registry identifier (org/repo/skill). The old loop passed the name
+        # straight through, so the repair could never succeed — and it hardcoded one category
+        # and broke after the first attempt, so at most one repair ever ran.
+        with tempfile.TemporaryDirectory() as t:
+            root = make_root(Path(t))
+            manifest = {"domain": "beekeeping", "label": "Beekeeping", "summary": "hives",
+                        "skills": ["nonexistent-skill"]}
+            spec = self._spec(root, harness_manifest=manifest, harness_install=True)
+            spec["settings"] = dict(spec["settings"], harness_install=True)
+
+            calls = []
+            import registry as registry_mod
+
+            def fake_search(query, limit=10):
+                return [{"name": query, "identifier": f"skills-sh/org/repo/{query}",
+                         "source": "skills.sh", "trust_level": "community"}]
+
+            def fake_install(identifier, category=None, name=None, root=None):
+                calls.append(identifier)
+                return {"status": "installed"}
+
+            with mock.patch.object(registry_mod, "search", side_effect=fake_search), \
+                    mock.patch.object(registry_mod, "install", side_effect=fake_install), \
+                    mock.patch.object(registry_mod, "list_installed", return_value=[]):
+                self._run(spec, root)
+
+            self.assertTrue(calls, "a missing skill should trigger a registry lookup + install")
+            for identifier in calls:
+                self.assertIn("/", identifier,
+                              f"install() needs a path-shaped identifier, not a bare name: {identifier!r}")
+
     def test_explicit_toolsets_in_spec_win_over_the_manifest(self):
         with tempfile.TemporaryDirectory() as t:
             root = make_root(Path(t))
@@ -278,6 +353,80 @@ class ForgeHarnessWiring(unittest.TestCase):
             self.assertTrue(out["ok"], out.get("error"))
             self.assertIn("file", out["toolsets"])
             self.assertNotIn("code_execution", out["toolsets"])
+
+
+def _load_plugin_package():
+    """Load the repo root as an importable package so `__init__.py` loads as written.
+
+    The directory name is not a valid Python identifier and `__init__.py` uses relative
+    imports, so it cannot simply be imported flat. A synthetic package whose search location
+    is the repo root gives those relative imports something real to resolve against.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "botforge_plugin", ROOT / "__init__.py",
+        submodule_search_locations=[str(ROOT)])
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["botforge_plugin"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class HarnessInstallSettingTests(unittest.TestCase):
+    """`harness_install` must actually be readable from plugin config.
+
+    The only other test for it injected settings straight into `forge.forge()`, which is the
+    one path where the flag can be False. The plugin builds its settings dict from
+    `__init__._SETTINGS`, and the key was missing there, so at runtime
+    `settings.get("harness_install", True)` always returned True: the documented switch that
+    stops `create_agent` from shelling out to remote registries did nothing.
+    """
+
+    def test_harness_install_is_in_the_settings_tuple(self):
+        mod = _load_plugin_package()
+        self.assertIn("harness_install", mod._SETTINGS,
+                      "the plugin config key must be readable or the flag is dead")
+
+    def test_register_hands_the_flag_to_the_handler(self):
+        # Go through the real register() closure, not a hand-built settings dict: that is the
+        # only path that reproduces how the plugin actually reads config.
+        mod = _load_plugin_package()
+        config = {"harness_install": False}
+        seen = {}
+
+        class Ctx:
+            def get_config(self, key, default=None):
+                return config.get(key, default)
+
+            def register_tool(self, *a, **kw):
+                # register() calls this with name positionally; accept either shape.
+                name = a[0] if a else kw.get("name")
+                seen[name] = kw.get("handler")
+
+            def register_hook(self, *a, **kw):  # register() wires a pre_llm_call hook too
+                pass
+
+            def register_skill(self, *a, **kw):  # and registers the bundled skill
+                pass
+
+        mod.register(Ctx())
+        self.assertIn("create_agent", seen, "register() must wire create_agent")
+        # The handler must receive the flag as False, proving the key is read end to end.
+        captured = {}
+
+        def fake_create_agent(args, **kwargs):
+            captured.update(kwargs)
+            return '{"ok": true}'
+
+        # The handler closes over the plugin package's own `tools` module, so patch that
+        # reference — patching the flat-imported `tools` would miss it and call the real thing.
+        with mock.patch.object(mod.tools, "create_agent", fake_create_agent):
+            seen["create_agent"]({"role": "x"})
+        self.assertIn("settings", captured, "the handler must pass a settings dict through")
+        self.assertIs(captured["settings"]["harness_install"], False,
+                      "harness_install=False must reach forge at runtime")
 
 
 class ForgeValidation(unittest.TestCase):

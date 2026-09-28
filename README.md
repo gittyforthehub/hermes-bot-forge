@@ -86,6 +86,10 @@ new expert Bot:
 }
 ```
 
+`skills` is required — a manifest naming no skills is reported as an error, not silently
+curated to nothing. `approvals` go at the top level, exactly as above, and are written into
+the Bot's SOUL.md as hard checkpoints.
+
 No Python, no plugin changes. The process benchmark already guarantees your manifest is
 delivered exactly as written — [the docs](docs/expert-harnesses.md) have the schema and the
 contribution rules. Whether a manifest names the *right* skills for its domain is the one

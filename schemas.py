@@ -52,9 +52,10 @@ CREATE_AGENT = {
             "harness": {"type": "string", "description": (
                 "domain key for a curated expert skill set — installs the right skills from the skill registries "
                 "and disables everything else, so the Bot is genuinely expert rather than broadly general. Use "
-                "whenever the job maps to a known domain ('ios', 'trading', 'social-media', 'business-ops', "
-                "'hermes-tuning'). The domain's toolsets, sandbox and approval defaults are applied too. "
-                "Check `harness_domains` for the full list; an unknown key is reported, not silently ignored.")},
+                "whenever the job maps to a known domain. Call `harness_domains` first for the authoritative list; "
+                "'ios' is the only one bundled today. For any other domain, author a manifest yourself and pass it "
+                "as `harness_manifest` rather than guessing a key. The domain's toolsets, sandbox and approval "
+                "defaults are applied too, and an unknown key is reported, not silently ignored.")},
             "ack_reactions": {"type": "boolean", "description": (
                 "react to the user's message to show where a request stands (👀 picked up, ✅ done, ✋ needs "
                 "approval, ⚠️ blocked). On by default; pass false only if the user wants a silent Bot.")},

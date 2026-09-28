@@ -115,6 +115,8 @@ def harness_domains(args: dict, **kwargs) -> str:
         m = harness_mod.load_manifest(key)
         if not m:
             continue
+        approvals = ((m.get("defaults") or {}).get("approvals")
+                     or m.get("approvals") or [])
         out.append({
             "domain": key,
             "label": m.get("label"),
@@ -125,7 +127,12 @@ def harness_domains(args: dict, **kwargs) -> str:
             "registry_skills": [e.get("query") or e.get("identifier")
                                 for e in (m.get("registry_skills") or []) if isinstance(e, dict)],
             "defaults": {k: v for k, v in (m.get("defaults") or {}).items() if k != "approvals"},
-            "approval_count": len((m.get("defaults") or {}).get("approvals") or []),
+            # The actual approval strings, not just a count: this tool exists so the agent can
+            # tell the user what the Bot will be gated on *before* building it. That is the one
+            # thing a user needs to know before creating a Bot that can touch signing
+            # identities or real money. These are static manifest text, not secrets.
+            "approvals": approvals,
+            "approval_count": len(approvals),
         })
     return json.dumps({"ok": True, "count": len(out), "domains": out,
                        "custom_manifest": "pass `harness_manifest` (inline JSON) to curate any other domain"})
