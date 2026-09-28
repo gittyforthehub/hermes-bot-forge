@@ -13,6 +13,12 @@
 
 **Say "make me a social media manager" — your Hermes agent builds that Bot.**
 
+> **This is a fork.** Upstream is [BkashJEE/hermes-bot-forge](https://github.com/BkashJEE/hermes-bot-forge)
+> by Bikash Joshi, MIT-licensed, and still maintained independently — the core plugin here is
+> his work. This fork adds **expert harnesses**: curated, verified skill sets for specialist
+> Bots. Nothing is merged back upstream unless he takes it. See
+> [docs/expert-harnesses.md](docs/expert-harnesses.md) for what is new here.
+
 ```bash
 hermes plugins install bot-forge
 ```
@@ -49,8 +55,10 @@ sharp rather than broadly general.
 | Trading Bot also carries | 137 OMH skills, a dozen social ones | nothing you didn't ask for |
 | If a skill can't be found | Bot built anyway, quietly weaker | **`gaps` reported, never silent** |
 
-**A verified iOS Bot carries 37 skills** out of 296 available — and still knows to ask
-before it touches the App Store or a signing identity.
+**On a Mac with a full skill library, a verified iOS Bot carries 37 skills out of 296
+available** — and still knows to ask before it touches the App Store or a signing identity.
+The exact numbers are yours, not the manifest's: what a harness guarantees is the *set*, and
+it reports anything it could not resolve.
 
 ### Use one
 

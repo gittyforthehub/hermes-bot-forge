@@ -178,10 +178,12 @@ Two subtleties worth knowing if you read the code:
 
 ### What a curated Bot actually loads
 
-The `ios` harness on a real install (158 profile-local skills, 138 shared/OMH skills)
+The `ios` harness, on one real install (158 profile-local skills, 138 shared/OMH skills),
 enables 36 and disables 260. What the Bot actually carries is the enabled set plus
 `hermes-agent`, which Hermes refuses to disable because the system prompt points at it
 unconditionally — **37 skills, not 36**, and not the ~172 an earlier version shipped.
+Treat the counts as *one machine's* numbers: the guarantee is the set, and `gaps` says
+what did not resolve. A different skill library gives different counts and the same rules.
 
 Two things make this work, and both were wrong in the first implementation:
 
