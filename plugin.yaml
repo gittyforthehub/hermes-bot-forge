@@ -3,9 +3,9 @@ version: 0.17.0
 description: Say "make me a <role>" and your Hermes agent builds a complete, working Bot — name, face, SOUL.md, memory, tools, skills, routines, Bot Chat and gateway — tested and rolled back on failure.
 author: Bikash Joshi
 contributors:
-  - jacobgottlieb0
+  - gittyforthehub
 license: MIT
-homepage: https://github.com/jacobgottlieb0/hermes-bot-forge
+homepage: https://github.com/gittyforthehub/hermes-bot-forge
 upstream: https://github.com/BkashJEE/hermes-bot-forge
 tags: [bots, bot-mode, profiles, agents, multi-agent, automation]
 kind: standalone

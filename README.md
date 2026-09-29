@@ -4,8 +4,8 @@
 
 <p align="center">
   <a href="https://hermes-agent.nousresearch.com/docs/plugins/"><img src="https://img.shields.io/badge/Hermes%20plugin%20catalog-listed-22D3EE?style=flat-square" alt="in the Hermes plugin catalog"></a>
-  <a href="https://github.com/jacobgottlieb0/hermes-bot-forge/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/jacobgottlieb0/hermes-bot-forge/tests.yml?style=flat-square&label=tests" alt="tests"></a>
-  <a href="https://github.com/jacobgottlieb0/hermes-bot-forge/releases"><img src="https://img.shields.io/github/v/release/jacobgottlieb0/hermes-bot-forge?style=flat-square&color=8B5CF6" alt="release"></a>
+  <a href="https://github.com/gittyforthehub/hermes-bot-forge/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/gittyforthehub/hermes-bot-forge/tests.yml?style=flat-square&label=tests" alt="tests"></a>
+  <a href="https://github.com/gittyforthehub/hermes-bot-forge/releases"><img src="https://img.shields.io/github/v/release/gittyforthehub/hermes-bot-forge?style=flat-square&color=8B5CF6" alt="release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64748B?style=flat-square" alt="MIT"></a>
 </p>
 
