@@ -183,6 +183,15 @@ def policy_body(text: str) -> str:
     # report something people stop reading.
     body = body.replace("\r\n", "\n").replace("\r", "\n")
     body = "\n".join(line.rstrip() for line in body.split("\n"))
+    # Collapse runs of blank lines BEFORE dedenting, not after. Dedent splits on blank lines to
+    # find block boundaries, so it absorbs a double blank line: normalising once turned
+    # `## Money\n\n- a\n\n\n- b` into `## Money\n- a\n\n- b`, and normalising that again dropped the
+    # remaining blank too. `policy_body` was therefore not idempotent, and since
+    # `ensure_identity` re-injects `policy_body(soul)`, simply renaming a Bot rewrote its
+    # inlined policy into a form that no longer hashed like the file it came from — the Bot
+    # reported STALE for a policy it had never violated. Collapsing first makes the operation
+    # a fixed point, which is the property the drift check actually needs.
+    body = re.sub(r"\n{3,}", "\n\n", body)
     # Normalise the bullet marker but KEEP the indentation, normalised to spaces, and only
     # after removing the indentation every line shares. Collapsing `  - sub` to `- sub` would
     # make a nested rule hash identically to a flat one -- a real change to the policy's
@@ -193,7 +202,7 @@ def policy_body(text: str) -> str:
     body = _dedent(body)
     body = re.sub(r"(?m)^([ \t]*)[-*+][ \t]+", lambda m: m.group(1) + "- ", body)
     body = re.sub(r"(?m)^([ \t]*)(\d+)[.)][ \t]+", lambda m: m.group(1) + f"{m.group(2)}. ", body)
-    return re.sub(r"\n{3,}", "\n\n", body).strip()
+    return body.strip()
 
 
 _LIST_LINE = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+")

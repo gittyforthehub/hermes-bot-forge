@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import policy  # noqa: E402
 import forge  # noqa: E402
+import survey  # noqa: E402
 
 
 class SharedPolicyRenderTests(unittest.TestCase):
@@ -804,6 +805,66 @@ class SharedPolicyCheckToolTests(unittest.TestCase):
         self.assertIn("bare", out["no_shared_policy"])
         self.assertNotIn("fresh", out["stale"])
         self.assertNotIn("fresh", out["no_shared_policy"])
+
+
+class RoundFourFollowupTests(unittest.TestCase):
+    """Two defects an independent review found after the blank-line nesting fix.
+
+    Both were false negatives in code that already had tests, and both were confirmed by
+    differential test against the pre-fix reader/normaliser before being fixed here.
+    """
+
+    def test_policy_body_is_idempotent(self):
+        # `_dedent` splits on blank lines, so running it before the `\\n{3,}` collapse ate a
+        # double blank line; normalising again ate the remainder. Not a fixed point, so a Bot
+        # that matched its policy at birth drifted to STALE the moment it was renamed --
+        # because `ensure_identity` re-injects `policy_body(soul)`.
+        for name, body in {
+            "double blank between rules": "## Money\n\n- Ask before spending money.\n\n\n- Never buy anything.\n",
+            "triple newline after heading": "## R\n\n\n\n- a\n",
+            "plain two rules": "## R\n\n- a\n- b\n",
+            "blank inside a list": "## R\n\n- a\n\n  - b\n",
+            "fenced code block": "## R\n\n- a\n\n```\n- not a rule\n```\n",
+        }.items():
+            with self.subTest(case=name):
+                once = policy.policy_body(body)
+                self.assertEqual(once, policy.policy_body(once),
+                                 f"policy_body not idempotent for {name!r}")
+
+    def test_rename_does_not_make_a_bots_own_policy_stale(self):
+        canonical = "## Money\n\n- Ask before spending money.\n\n\n- Never buy anything.\n"
+        soul = (policy.BEGIN + canonical + policy.END +
+                "\n\n# V - Bot\n\n## Your one job\n\nDo things.\n")
+        self.assertEqual(policy.fingerprint(canonical), policy.fingerprint(soul))
+        renamed = forge.ensure_identity(soul, "Vega", "Bot", "v")
+        self.assertEqual(
+            policy.fingerprint(canonical), policy.fingerprint(renamed),
+            "renaming a Bot rewrote its own inlined policy into a form that no longer "
+            "matched the file it came from")
+
+    def test_survey_reads_a_persona_that_sits_behind_a_long_policy(self):
+        # `scan_hermes` sliced the first 2000 chars of SOUL.md. The starter policy is ~1984
+        # chars, so any Bot carrying it had its persona sliced away and `one_job` came back
+        # empty -- which silently disarms the duplicate-Bot guard for exactly the Bots the
+        # guard exists to catch.
+        persona = "# Alpha - chart bot\n\n## Your one job\n\nBuild quarterly revenue charts for the CFO.\n"
+        for name, block in {
+            "starter policy": policy.STARTER_POLICY,
+            "policy longer than the 2000-char window": policy.STARTER_POLICY + "\n- extra rule\n",
+        }.items():
+            with self.subTest(case=name):
+                root = Path(tempfile.mkdtemp())
+                prof = root / "profiles" / "alpha"
+                prof.mkdir(parents=True)
+                (prof / "SOUL.md").write_text(
+                    policy.BEGIN + block + policy.END + "\n\n" + persona)
+                (prof / "profile.yaml").write_text(
+                    "name: alpha\nui_meta:\n  hermes-bots:\n    title: Alpha\n")
+                (prof / "config.yaml").write_text("name: alpha\n")
+                found = survey.scan_hermes(root)
+                bots = found.get("bots", found) if isinstance(found, dict) else found
+                self.assertTrue(bots, "scan_hermes returned no bots")
+                self.assertIn("quarterly revenue charts", bots[0]["one_job"])
 
 
 if __name__ == "__main__":
