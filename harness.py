@@ -203,13 +203,18 @@ def _name_list(value) -> list[str]:
     return []
 
 
-def plan(profile_dir: Path, manifest: dict, cfg: dict | None = None) -> dict:
+def plan(profile_dir: Path, manifest: dict, cfg: dict | None = None,
+         extra_keep: set[str] | None = None) -> dict:
     """Compute the enable/disable sets for `manifest` against a real profile directory.
 
     Pure: touches no files, so it is safe to call from tests and from a dry run.
     `cfg` may be passed to supply the profile config (for `skills.external_dirs`); when omitted
     the config is read from disk. A malformed manifest produces a thin result, never an
     exception: a contributor's typo must not take down an unrelated `create_agent` call.
+    `extra_keep` names skills the caller has just installed and knows belong to this Bot --
+    currently the `registry_skills` a manifest pulls. Without it those skills are installed
+    and then immediately disabled by the very curation step meant to enable them, and the
+    Bot reports them as neither present nor missing.
     """
     skills_dir = profile_dir / "skills"
     inv = inventory(skills_dir)                       # profile-local: the only ones we may disable
@@ -238,7 +243,10 @@ def plan(profile_dir: Path, manifest: dict, cfg: dict | None = None) -> dict:
     # is exactly the contamination this is meant to remove. (An earlier version treated
     # external skills as untouchable, which left ~138 irrelevant skills loaded per Bot.)
     # NEVER_DISABLE is excluded because Hermes ignores a disable for those names anyway.
-    keep = keep_names | resolved
+    # `extra_keep` is the registry skills just installed: they belong to the manifest even
+    # though they never appeared in `manifest["skills"]`, so without this line the curation
+    # would install them and disable them in the same pass.
+    keep = keep_names | resolved | {n for n in (extra_keep or set()) if n in all_inv}
     disabled = {n for n in all_inv if n not in keep and n not in NEVER_DISABLE}
 
     return {

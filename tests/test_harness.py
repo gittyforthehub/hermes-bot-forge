@@ -532,5 +532,57 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(rep["gaps"], [])
 
 
+class RegistrySkillKeepTests(unittest.TestCase):
+    """A registry-installed skill must survive the curation that installed it.
+
+    The bug this pins: `forge` installs a manifest's `registry_skills`, then calls
+    `plan()` to disable everything off the allowlist. `plan()`'s keep-set was built only
+    from `manifest["skills"]` and `skill_categories`, so a registry skill — which by
+    definition is never named in `skills` — was installed and then disabled in the same
+    pass. The result reported neither the skill nor a gap: the Bot looked curated and had
+    none of the domain references its manifest asked for. Found by forking the real iOS
+    harness, where all 10 registry entries vanished this way.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.profile = Path(self.tmp.name)
+        self.skills = self.profile / "skills"
+        make_skill(self.skills, "software-development/ios-app-delivery", "ios-app-delivery")
+        make_skill(self.skills, "software-development/swiftui", "swiftui")
+        make_skill(self.skills, "finance/stocks", "stocks")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_a_registry_skill_is_disabled_without_being_passed(self):
+        m = {"domain": "ios", "skills": ["ios-app-delivery"], "skill_categories": []}
+        r = harness.plan(self.profile, m)
+        self.assertIn("swiftui", r["disabled"],
+                      "precondition: an unnamed skill is off the allowlist")
+
+    def test_extra_keep_rescues_an_installed_registry_skill(self):
+        m = {"domain": "ios", "skills": ["ios-app-delivery"], "skill_categories": []}
+        r = harness.plan(self.profile, m, extra_keep={"swiftui"})
+        self.assertIn("swiftui", r["keep"])
+        self.assertNotIn("swiftui", r["disabled"])
+        # and the rest of the curation is untouched
+        self.assertIn("stocks", r["disabled"])
+        self.assertIn("ios-app-delivery", r["keep"])
+
+    def test_extra_keep_ignores_a_name_that_is_not_actually_installed(self):
+        """Passing a name the profile does not have must not invent it."""
+        m = {"domain": "ios", "skills": ["ios-app-delivery"], "skill_categories": []}
+        r = harness.plan(self.profile, m, extra_keep={"nonexistent-skill"})
+        self.assertNotIn("nonexistent-skill", r["keep"])
+
+    def test_extra_keep_is_optional_and_defaults_to_the_old_behaviour(self):
+        m = {"domain": "ios", "skills": ["ios-app-delivery"], "skill_categories": []}
+        self.assertEqual(harness.plan(self.profile, m)["keep"],
+                         harness.plan(self.profile, m, extra_keep=None)["keep"])
+        self.assertEqual(harness.plan(self.profile, m)["keep"],
+                         harness.plan(self.profile, m, extra_keep=set())["keep"])
+
+
 if __name__ == "__main__":
     unittest.main()

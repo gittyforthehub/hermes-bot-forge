@@ -778,14 +778,21 @@ def forge(s: dict) -> dict:
 
                 manifest = harness["manifest"]
                 entries = harness_mod.resolve_registry(registry_mod, manifest) if settings.get("harness_install", True) else []
+                # Skills a manifest pulls from a registry belong to the curated set even though
+                # they are not in `manifest["skills"]`. Collect their names so the plan below
+                # keeps them -- otherwise they install and are disabled in the same pass, and
+                # the Bot ends up with none of the domain skills its manifest asked for.
+                registry_kept: set[str] = set()
                 for entry in entries:
                     if entry.get("status") == "resolved" and entry.get("identifier"):
                         outcome = registry_mod.install(entry["identifier"], entry.get("category"),
                                                        entry.get("name"), root=root)
                         entry["install"] = outcome.get("status")
+                        if outcome.get("status") == "installed" and entry.get("name"):
+                            registry_kept.add(entry["name"])
                 # Re-read config: an install may have added skills to the profile.
                 cfg = load_yaml(cfg_path)
-                hresult = harness_mod.plan(pdir, manifest, cfg)
+                hresult = harness_mod.plan(pdir, manifest, cfg, extra_keep=registry_kept)
                 if hresult["missing"] and settings.get("harness_install", True):
                     # A missing skill is a *local* name (ios-app-delivery), but `hermes skills
                     # install` needs a path-shaped registry identifier (org/repo/skill). Passing

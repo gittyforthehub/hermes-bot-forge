@@ -88,7 +88,10 @@ def validate(path: Path) -> tuple[list[str], list[str]]:
                     errors.append(f"registry_skills[{i}] must be an object")
                 elif not (e.get("query") or e.get("identifier")):
                     errors.append(f"registry_skills[{i}] needs a 'query' or an 'identifier'")
-                elif e.get("query") and not e.get("optional"):
+                elif e.get("query") and not e.get("optional") and not e.get("identifier"):
+                    # Only a bare query is risky. `resolve_registry_skill` prefers an explicit
+                    # identifier and only falls back to searching, so an entry that carries
+                    # both is deterministic and this note would be a false alarm.
                     notes.append(f"registry_skills[{i}] uses a search query and is required; "
                                  "search is noisy, so prefer an explicit identifier")
 

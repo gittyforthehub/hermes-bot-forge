@@ -10,7 +10,10 @@
     "systematic-debugging",
     "feature-scoping",
     "project-verification-harness",
-    "grounded-citations"
+    "grounded-citations",
+    "deployment-state-verification",
+    "codebase-inspection",
+    "agent-instruction-maintenance"
   ],
   "toolsets": [
     "terminal",
@@ -22,17 +25,84 @@
   ],
   "registry_skills": [
     {
-      "query": "swift",
-      "name": "swift",
+      "query": "ios-dev",
+      "name": "ios-dev",
+      "identifier": "skills-sh/prisma-labs-dev/apple-skills/ios-dev",
       "category": "software-development",
-      "optional": true,
-      "note": "Community Swift reference; the local skills above remain authoritative."
+      "optional": false,
+      "note": "Entry point for Apple work: coordinates the guides, correctness checks and API references below. MIT."
     },
     {
       "query": "swiftui",
       "name": "swiftui",
+      "identifier": "skills-sh/prisma-labs-dev/apple-skills/swiftui",
       "category": "software-development",
-      "optional": true
+      "optional": false,
+      "note": "SwiftUI API reference — views, layout, navigation, @State/@Binding/@Observable. MIT."
+    },
+    {
+      "query": "uikit",
+      "name": "uikit",
+      "identifier": "skills-sh/prisma-labs-dev/apple-skills/uikit",
+      "category": "software-development",
+      "optional": false,
+      "note": "UIKit API reference, for the interop and legacy paths SwiftUI does not cover. MIT."
+    },
+    {
+      "query": "swift-testing",
+      "name": "swift-testing",
+      "identifier": "skills-sh/prisma-labs-dev/apple-skills/swift-testing",
+      "category": "software-development",
+      "optional": false,
+      "note": "Swift Testing: @Test, @Suite, #expect, #require, traits, parameterized tests. MIT."
+    },
+    {
+      "query": "swift-concurrency",
+      "name": "swift-concurrency",
+      "identifier": "skills-sh/prisma-labs-dev/apple-skills/swift-concurrency",
+      "category": "software-development",
+      "optional": false,
+      "note": "async/await, Task, TaskGroup, actors, AsyncSequence. MIT."
+    },
+    {
+      "query": "swiftdata",
+      "name": "swiftdata",
+      "identifier": "skills-sh/prisma-labs-dev/apple-skills/swiftdata",
+      "category": "software-development",
+      "optional": false,
+      "note": "@Model, ModelContext, @Query, schema migrations. MIT."
+    },
+    {
+      "query": "combine",
+      "name": "combine",
+      "identifier": "skills-sh/prisma-labs-dev/apple-skills/combine",
+      "category": "software-development",
+      "optional": true,
+      "note": "Publishers and operators, for code that predates or interops with Swift concurrency. MIT."
+    },
+    {
+      "query": "apple-docs-index",
+      "name": "apple-docs-index",
+      "identifier": "skills-sh/prisma-labs-dev/apple-skills/apple-docs-index",
+      "category": "software-development",
+      "optional": true,
+      "note": "Index of Apple developer documentation, for framework APIs not covered above. MIT."
+    },
+    {
+      "query": "xcuitest",
+      "name": "xcuitest",
+      "identifier": "skills-sh/prisma-labs-dev/apple-skills/xcuitest",
+      "category": "software-development",
+      "optional": true,
+      "note": "UI test automation — the layer that actually exercises a running app. MIT."
+    },
+    {
+      "query": "simulator-utils",
+      "name": "simulator-utils",
+      "identifier": "skills-sh/prisma-labs-dev/apple-skills/simulator-utils",
+      "category": "software-development",
+      "optional": true,
+      "note": "Driving and inspecting simulators without hand-typing simctl incantations. MIT."
     }
   ],
   "approvals": [

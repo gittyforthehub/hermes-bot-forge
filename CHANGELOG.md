@@ -3,6 +3,61 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-09-29
+
+A third independent review of the shared-policy work returned `no_ship`. Its headline finding
+was framed as "the drift detector is blind to re-indenting a whole list block" — but that case
+is the documented *intended* behaviour, since a list indented under its heading is the same
+list. Testing the same code path surfaced the real defect, and a worse one the review did not
+find.
+
+### Fixed
+- **The drift detector could not see a rule that stood alone after a blank line.** `_dedent`
+  split on blank lines, so any rule separated from its siblings by a blank line was its own
+  block — and that block's own indentation became its "common margin" and was removed. Flat,
+  nested-across-a-blank-line and sibling-across-a-blank-line all hashed to `8cc247389e36`:
+  three different policies, one fingerprint, silently. That is strictly worse than the cosmetic
+  false positive the rule was trading against, because a Bot edited to run different rules kept
+  reporting `current`. Dedent now tracks a running baseline and treats a block as a
+  continuation of the list above it only when the previous line was itself a list item **and**
+  the block sits at or below that list's baseline. Both halves are load-bearing: without the
+  first, a sub-bullet after a blank line flattens; without the second, a flush rule after an
+  indented list is cut to nothing — deleting a rule outright, which the regression tests now
+  pin.
+- **A manifest's `registry_skills` were installed and then immediately disabled.** `forge`
+  installs them, then calls `plan()` to disable everything off the allowlist — but `plan()`'s
+  keep-set came only from `manifest["skills"]` and `skill_categories`, and a registry skill is
+  by definition never named in `skills`. The result reported neither the skill nor a gap: the
+  Bot looked curated and had none of the domain references its manifest asked for. Found by
+  forking the real iOS harness, where all ten registry entries vanished this way. `plan()` now
+  takes `extra_keep`, and `forge` passes the names it just installed.
+- **`validate_manifest.py` warned about entries that were already deterministic.** The note
+  fired on any required `registry_skills` entry carrying a `query`, even when an explicit
+  `identifier` was also present — and `resolve_registry_skill` prefers the identifier, only
+  falling back to search. A false alarm on a correct manifest trains people to ignore it.
+
+### Changed
+- **`harnesses/ios.json` is widened from 6 local skills and 2 registry skills to 9 and 10.**
+  The registry entries all come from [`prisma-labs-dev/apple-skills`](https://github.com/prisma-labs-dev/apple-skills)
+  (MIT): `ios-dev`, `swiftui`, `uikit`, `swift-testing`, `swift-concurrency`, `swiftdata`, plus
+  `combine`, `apple-docs-index`, `xcuitest` and `simulator-utils`. A six-skill manifest gave a
+  Bot whose entire job is writing Swift no Swift reference at all.
+- [`dpearson2699/swift-ios-skills`](https://github.com/dpearson2699/swift-ios-skills) was
+  evaluated and **rejected**: 86 skills, but PolyForm Perimeter, whose noncompete clause
+  excludes providing a competing product. Shipping a public manifest that installs them into a
+  community Bot factory is exactly that, so naming them here would be a licence problem rather
+  than a curation judgement.
+
+### Added
+- `bench/round4_mutation_check.py`, in CI: four mutations covering the dedent rewrite, each of
+  which must fail the suite when reverted. One of them (a dropped baseline inheritance) survived
+  the first attempt, which is how the genuine three-level-hierarchy case was found.
+
+### Corrected
+- A version-bump test caught that this entry did not exist. Committing `0.18.0` before writing
+  it is the same "claim the artifact, then build it" mistake as claiming a benchmark script in
+  0.15.1 — the test that guards it is the only reason it was caught before push.
+
 ## [0.17.0] - 2026-09-28
 
 A second independent review of the shared-policy feature returned `no_ship` again: the nine

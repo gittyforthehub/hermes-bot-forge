@@ -393,6 +393,109 @@ class SharedPolicyPathSafetyTests(unittest.TestCase):
                             policy.fingerprint("1. a\n1. sub"),
                             "a numbered sub-list must keep its depth, like a bulleted one")
 
+    def test_a_blank_line_does_not_reset_nesting_depth(self):
+        """Regression: a rule on its own after a blank line lost its nesting entirely.
+
+        `_dedent` split on blank lines, so any rule separated from its siblings by a blank
+        line was its own block, and that block's own indentation became its "common margin"
+        and was removed. Flat, nested-across-a-blank-line, and sibling-across-a-blank-line
+        all hashed to 8cc247389e36 — three different policies, one fingerprint, silently.
+
+        This is worse than the cosmetic false positive it was trading against: a Bot edited
+        to run different rules would still report `current`, so the drift detector could not
+        see the change it exists to report.
+        """
+        flat = "## Rules\n\n- Ask before spending money.\n- Never paste secrets.\n"
+        nested = "## Rules\n\n- Ask before spending money.\n\n  - Never paste secrets.\n"
+        sibling = "## Rules\n\n- Ask before spending money.\n\n- Never paste secrets.\n"
+
+        self.assertNotEqual(policy.fingerprint(nested), policy.fingerprint(flat),
+                            "a sub-bullet after a blank line must not hash as a sibling rule")
+        self.assertNotEqual(policy.fingerprint(nested), policy.fingerprint(sibling),
+                            "a nested rule after a blank line must not hash as a flat one")
+        # sibling-across-blank-line and flat are genuinely the same list, so they must match
+        self.assertEqual(policy.fingerprint(sibling), policy.fingerprint(flat),
+                         "a blank line between two sibling rules is not itself a rule")
+
+    def test_a_fenced_block_dedents_as_its_own_block(self):
+        """A fenced block is a block, and its own margin is its baseline.
+
+        Written to pin the continuation rule against a non-list block. The discriminator is
+        "did the previous line end with a list item", and a code fence never does, so a fence
+        is always a fresh block and dedents to flush — even when it is indented two spaces
+        under a list. This is a real Markdown convention (a fence nested inside a list item
+        needs its own indent to stay inside the item), so the fence case must NOT be
+        confused with the sub-bullet case the previous test covers.
+        """
+        text = "## Rules\n\n- a\n\n  ```python\n  x = 1\n  ```\n"
+        dedented = policy._dedent(text)
+        self.assertIn("```python", dedented, "an indented fence is a new block and dedents")
+        self.assertNotIn("  x = 1", dedented, "its contents dedent with it, not relative to the list")
+        # and the list around it is untouched
+        self.assertIn("- a", dedented)
+
+    def test_a_later_list_dedents_against_its_own_heading_not_an_earlier_one(self):
+        """Regression: the baseline must not leak between two separate lists.
+
+        Dedent tracks a running `baseline` so a sub-bullet can keep its depth. If a list
+        after a blank line inherits the baseline an EARLIER list established, then indenting
+        that second list under its own heading reads as a real change -- a cosmetic false
+        positive, the failure the per-block rule was introduced to avoid. A dropped-inherit
+        mutation (H2) survives unless a test pins the case where inheriting and not
+        inheriting actually differ.
+
+        The distinguishing shape is deep-then-flush-then-deep: the second block's own margin
+        is 0, and the carried baseline of 4 would strip four spaces off its sub-bullet.
+        """
+        text = "## R\n\n    - a\n\n- b\n\n    - c\n"
+        dedented = policy._dedent(text)
+        self.assertIn("    - c", dedented,
+                      "a list indented under its own heading keeps its margin; the baseline "
+                      "established by an earlier list must not strip it")
+        # and the first list, which genuinely is at depth 4, must still dedent
+        self.assertNotIn("    - a", dedented, "the first list's own margin is still its baseline")
+
+    def test_a_deeper_sibling_after_a_sub_bullet_keeps_its_depth(self):
+        """Regression: a third block must compound depth against the list's own baseline.
+
+        `baseline` is what makes `- a / sub / deeper-sibling` keep two distinct levels
+        instead of collapsing both sub-bullets onto one. If the baseline is reset by every
+        block (the H2 mutation), a block indented deeper than the list it continues is
+        treated as starting a NEW list, its own margin becomes the new baseline, and a
+        genuine three-level hierarchy silently flattens to two. The two levels differ, so
+        the fingerprint changes either way — what disappears is the distinction between a
+        two-level and a three-level policy.
+        """
+        two_level = "## R\n\n- a\n\n  - b\n\n    - c\n"
+        dedented = policy._dedent(two_level)
+        self.assertIn("    - c", dedented,
+                      "a block indented deeper than the list it continues must not reset to "
+                      "a new list's baseline")
+        self.assertNotEqual(policy.fingerprint("## R\n\n- a\n\n  - b\n\n  - c\n"),
+                            policy.fingerprint(two_level),
+                            "a two-level and a three-level policy must not be conflated")
+
+    def test_a_whole_document_indent_is_cosmetic(self):
+        """A document indented throughout is the same document as one written flush.
+
+        The counterpart to the baseline-leak test above, and the reason that one is narrow:
+        uniform document-level indentation carries no meaning, because the minimum indent is
+        the document's own margin. What carries meaning is indentation *relative to the
+        block's baseline* — which is why a sub-bullet survives and a wholesale indent does not.
+        """
+        deep = "## R\n\n    - a\n    - b\n"
+        flush = "## R\n\n- a\n- b\n"
+        self.assertEqual(policy.fingerprint(deep), policy.fingerprint(flush),
+                         "a document indented throughout is the same document, written flush")
+        # two lists at the same depth, split by a blank line, are the same rules
+        two_deep = "## R\n\n    - a\n\n    - b\n"
+        self.assertEqual(policy.fingerprint(deep), policy.fingerprint(two_deep),
+                         "a blank line inside a list is not itself a rule")
+        # ...but a second list at a different depth is a different document
+        mixed = "## R\n\n    - a\n    - b\n\n- c\n- d\n"
+        self.assertNotEqual(policy.fingerprint(deep), policy.fingerprint(mixed),
+                            "a second list at a different depth is a different layout")
+
     def test_health_does_not_flag_a_bot_for_its_policy_block(self):
         """Regression: health read the raw SOUL, so a policy hid the Bot's own name.
 

@@ -196,13 +196,27 @@ def policy_body(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", body).strip()
 
 
-def _dedent(text: str) -> str:
-    """Remove, per block, the indentation every line in that block shares; tabs become spaces.
+_LIST_LINE = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+")
 
-    Dedenting per block rather than per document is what makes both cases work: a list
-    written two spaces under its heading is the same list, while a sub-bullet inside an
-    already-flush list keeps its depth relative to its parent. Only the *relative* depth of
-    a line against its siblings carries meaning.
+
+def _dedent(text: str) -> str:
+    """Strip each block's own baseline indentation and expand tabs; relative depth survives.
+
+    The baseline is the margin a block introduces, not the one it happens to share with the
+    lines around it. Two cases pull in opposite directions and both have to hold:
+
+    - A list written two spaces under its heading is the SAME list as one written flush, so
+      the block's own margin is cosmetic and is removed.
+    - A sub-bullet is a real structural change from a sibling, even when a blank line
+      separates them, so a block that CONTINUES a list keeps the depth it was written at.
+
+    The discriminator is whether the previous non-blank line was itself a list item. If it
+    was, this block continues that list and inherits its baseline; otherwise this block
+    starts something new and its own margin becomes the baseline. A first attempt computed
+    the margin per block with no notion of continuation, which made a rule after a blank
+    line lose its nesting entirely: flat, nested and sibling all hashed to 8cc247389e36.
+    That is the worst failure a drift detector can have — a Bot running different rules
+    still reporting `current`.
     """
     blocks: list[list[str]] = [[]]
     for line in text.split("\n"):
@@ -211,15 +225,31 @@ def _dedent(text: str) -> str:
         else:
             blocks.append([])
     out: list[str] = []
+    baseline = 0  # indentation that carries no meaning in the rules so far
+    prev_was_item = False
     for block in blocks:
         if not block:
             out.append("")
             continue
-        # Expand tabs FIRST, then measure. Doing it per-line in two different ways made a
-        # tab-indented list dedent to one space instead of none.
+        # Expand tabs FIRST, then measure, so a tab-indented list dedents to nothing
+        # instead of to one space.
         flat = [ln.expandtabs(2) for ln in block]
-        common = min(len(ln) - len(ln.lstrip(" ")) for ln in flat)
-        out.extend(ln[common:] if common else ln for ln in flat)
+        margin = min(len(ln) - len(ln.lstrip(" ")) for ln in flat)
+        # A block only continues the list above it if it is a list AND sits at or below that
+        # list's baseline. Without the second half, a flush rule following an indented list is
+        # "less indented than its parent", which is not Markdown at all -- and cutting by the
+        # baseline consumed the whole line, silently deleting a rule. That is a corruption,
+        # not a normalisation, so such a block starts a new list instead.
+        continues = (
+            prev_was_item
+            and margin >= baseline
+            and all(_LIST_LINE.match(ln) for ln in flat)
+        )
+        cut = baseline if continues else margin
+        out.extend(ln[cut:] if cut else ln for ln in flat)
+        if not continues:
+            baseline = margin
+        prev_was_item = bool(flat) and bool(_LIST_LINE.match(flat[-1]))
     return "\n".join(out)
 
 
