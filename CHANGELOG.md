@@ -3,6 +3,37 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.1] - 2026-09-29
+
+A patch on top of 0.18.0, from forking the real iOS harness. `0.18.1` rather than a
+re-release because the manifest, the plugin and the tests are unchanged in shape — one
+resolution function was wrong.
+
+### Fixed
+- **A manifest's explicit `identifier` was searched over instead of used.**
+  `resolve_registry_skill` searched by `query` and then overwrote the entry's identifier with
+  the top hit, treating the exact artifact the author named as a hint. Two silent wrong
+  installs resulted on the iOS manifest:
+  - `combine` resolved to `openai/skills/skills/.curated/chatgpt-apps` — an unrelated skill.
+  - `swift-testing`, `swift-concurrency` and `swiftdata` resolved to
+    [`dpearson2699/swift-ios-skills`](https://github.com/dpearson2699/swift-ios-skills), which
+    is **PolyForm Perimeter** — the exact licence this manifest documents rejecting. The
+    identifier said MIT; the search said PolyForm; the search won.
+
+  Every one reported `status: "resolved"`, so nothing in the harness report revealed the
+  substitution. An explicit identifier is now authoritative and performs no search at all;
+  search remains the path for entries carrying only a `query`, which is what that field is
+  for. With identifiers honoured, all six required iOS entries install cleanly — the earlier
+  run installed one of ten, because nine had been rewritten to identifiers that either did
+  not exist under that name or belonged to the rejected repository, and the Bot ended up with
+  no Swift reference at all while the manifest reported no gaps.
+
+### Corrected
+- Twice in this session I bumped the version and committed before writing the CHANGELOG
+  entry, and the `test_versions_agree` test caught both times. The failure is mine and
+  repetitive, not the test's: the guard is doing exactly its job and I should be reading the
+  version bump as requiring the entry, not as two separate steps.
+
 ## [0.18.0] - 2026-09-29
 
 A third independent review of the shared-policy work returned `no_ship`. Its headline finding

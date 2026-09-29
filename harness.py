@@ -289,8 +289,16 @@ def resolve_registry_skill(registry_mod, spec: dict) -> dict:
     if not entry["identifier"] and not entry["query"]:
         entry["status"] = "invalid: needs 'identifier' or 'query'"
         return entry
+    # An explicit identifier is the author naming the exact artifact. Honour it verbatim.
+    # Searching instead and taking the top hit is how a manifest asking for `combine` got
+    # `chatgpt-apps`, and how three MIT-identified entries silently resolved to a
+    # PolyForm-licensed repo the manifest had deliberately rejected: the query won, and the
+    # identifier was only a starting hint. Search is for entries that have no identifier.
+    if entry["identifier"]:
+        entry["status"] = "resolved"
+        return entry
     try:
-        found = registry_mod.search(entry["query"] or entry["identifier"], limit=1)
+        found = registry_mod.search(entry["query"], limit=1)
         if not found:
             entry["status"] = "not found in registry"
             return entry

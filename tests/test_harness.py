@@ -584,5 +584,60 @@ class RegistrySkillKeepTests(unittest.TestCase):
                          harness.plan(self.profile, m, extra_keep=set())["keep"])
 
 
+class ExplicitIdentifierIsAuthoritativeTests(unittest.TestCase):
+    """A manifest's `identifier` names an exact artifact and must be used verbatim.
+
+    Resolution used to *search* by `query` and overwrite the identifier with the top hit,
+    treating the precise thing the author wrote as a mere hint. Two real consequences on the
+    iOS manifest: `combine` resolved to `chatgpt-apps` — a completely unrelated OpenAI skill —
+    and three entries pinned to MIT sources came back from `dpearson2699/swift-ios-skills`,
+    which is PolyForm Perimeter and which the manifest had deliberately rejected. Both
+    failures were silent: the entry reported `resolved`.
+    """
+
+    class FakeRegistry:
+        def __init__(self, rows):
+            self.rows = rows
+            self.queries = []
+
+        def search(self, query, limit=5):
+            self.queries.append(query)
+            return self.rows
+
+    def test_an_explicit_identifier_is_not_searched_or_overwritten(self):
+        reg = self.FakeRegistry([{"name": "chatgpt-apps", "identifier": "openai/skills/chatgpt-apps",
+                                  "source": "openai"}])
+        e = harness.resolve_registry_skill(reg, {
+            "query": "combine", "name": "combine",
+            "identifier": "skills-sh/prisma-labs-dev/apple-skills/combine",
+        })
+        self.assertEqual(e["identifier"], "skills-sh/prisma-labs-dev/apple-skills/combine")
+        self.assertEqual(e["name"], "combine", "the manifest's own name must not be replaced")
+        self.assertEqual(e["status"], "resolved")
+        self.assertEqual(reg.queries, [], "an explicit identifier needs no search at all")
+
+    def test_a_bare_query_still_searches(self):
+        reg = self.FakeRegistry([{"name": "swiftui", "identifier": "skills-sh/x/swiftui",
+                                  "source": "skills.sh"}])
+        e = harness.resolve_registry_skill(reg, {"query": "swiftui", "name": "swiftui"})
+        self.assertEqual(e["identifier"], "skills-sh/x/swiftui")
+        self.assertEqual(reg.queries, ["swiftui"], "search is still the path when no identifier")
+
+    def test_resolve_registry_honours_every_explicit_identifier(self):
+        reg = self.FakeRegistry([{"name": "wrong", "identifier": "wrong/place", "source": "x"}])
+        entries = harness.resolve_registry(reg, {"registry_skills": [
+            {"query": "combine", "name": "combine", "identifier": "skills-sh/official/combine"},
+            {"query": "uikit", "name": "uikit", "identifier": "skills-sh/official/uikit"},
+        ]})
+        self.assertEqual([e["identifier"] for e in entries],
+                         ["skills-sh/official/combine", "skills-sh/official/uikit"])
+        self.assertEqual(reg.queries, [])
+
+    def test_an_empty_search_result_still_reports_not_found_for_a_bare_query(self):
+        reg = self.FakeRegistry([])
+        e = harness.resolve_registry_skill(reg, {"query": "nothing", "name": "nothing"})
+        self.assertEqual(e["status"], "not found in registry")
+
+
 if __name__ == "__main__":
     unittest.main()
