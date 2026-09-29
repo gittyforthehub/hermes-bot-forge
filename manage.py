@@ -99,10 +99,13 @@ def op_update(s: dict, root: Path, settings: dict) -> dict:
     if refresh_policy:
         import policy as policy_mod
 
-        root = Path(s.get("hermes_root") or Path.home() / ".hermes")
+        # `root` is the one the caller resolved in `manage()` and already used to find this
+        # Bot. Re-deriving it from the spec let the two disagree, and then the policy was read
+        # from the real ~/.hermes while the Bot was written somewhere else. Use the argument.
+        pol_root = Path(root)
         rel = s.get("shared_policy_path") or policy_mod.DEFAULT_RELATIVE
         try:
-            pol = policy_mod.policy_path(root, rel)
+            pol = policy_mod.policy_path(pol_root, rel)
         except policy_mod.PolicyPathError as exc:
             raise ValueError(str(exc))
         if not pol.exists():

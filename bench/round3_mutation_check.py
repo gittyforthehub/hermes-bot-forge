@@ -73,6 +73,12 @@ MUTATIONS: list[tuple[str, str, str, str, str]] = [
         "        if refresh_policy and pol_text:\n",
         "        if False:\n",
     ),
+    (
+        "G9", "op_update re-derives the root from the spec (wrong Hermes root)",
+        "manage.py",
+        "        pol_root = Path(root)\n",
+        '        pol_root = Path(s.get("hermes_root") or Path.home() / ".hermes")\n',
+    ),
 ]
 
 TESTS = "tests"

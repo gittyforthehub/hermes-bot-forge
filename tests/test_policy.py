@@ -496,6 +496,46 @@ class SharedPolicyPathSafetyTests(unittest.TestCase):
         self.assertNotIn("default", names)
         self.assertEqual(out["bots_checked"], 0, "no forge Bots exist in this root")
 
+    def test_refresh_uses_the_callers_root_not_the_real_home(self):
+        """`op_update` re-derived the root from the spec instead of using its argument.
+
+        It received `root` as a parameter and used it to find the Bot, then ignored it for the
+        policy path. A caller managing a non-default Hermes root therefore read the policy from
+        the real `~/.hermes` while writing the Bot somewhere else -- or, as CI found, looked
+        for a policy that does not exist and refused with a path the caller never asked about.
+        """
+        import manage
+        import yaml
+        with tempfile.TemporaryDirectory() as t:
+            home = Path(t)
+            real_hermes = home / ".hermes"
+            real_hermes.mkdir()
+            # a policy in the REAL home, whose content differs, to catch a cross-read
+            canon_real = policy.policy_path(real_hermes)
+            canon_real.parent.mkdir(parents=True)
+            canon_real.write_text("- rule from the real home\n")
+
+            root = home / "hr"
+            pdir = root / "profiles" / "sol"
+            pdir.mkdir(parents=True)
+            (pdir / "config.yaml").write_text(yaml.safe_dump({"name": "sol"}))
+            (pdir / "SOUL.md").write_text("# Sol\n\nYou are **Sol**.\n")
+            canon = policy.policy_path(root)
+            canon.parent.mkdir(parents=True)
+            canon.write_text("- ask before spending\n")
+
+            # `hermes_root` deliberately points somewhere else, as a stale spec would.
+            out = manage.op_update(
+                {"name": "sol", "refresh_shared_policy": True,
+                 "hermes_root": str(home / "somewhere-else")},
+                root, {},
+            )
+            self.assertTrue(out["ok"], out)
+            text = (pdir / "SOUL.md").read_text()
+            self.assertIn("ask before spending", text)
+            self.assertNotIn("rule from the real home", text,
+                             "the policy was read from the wrong Hermes root")
+
     def test_policy_path_rejects_non_string(self):
         """A template value reaches policy_path untyped; a list must not raise TypeError.
 
