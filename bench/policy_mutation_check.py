@@ -40,9 +40,14 @@ MUTATIONS = [
      'if block is None:\n        return False, "no shared-policy block"',
      'if block is None:\n        return True, "current"'),
 
-    ("M6", "block regex loses its capture group, so the body keeps the markers",
-     're.escape(BEGIN) + r"\\n?(.*?)" + re.escape(END)',
-     're.escape(BEGIN) + r"\\n?.*?" + re.escape(END)'),
+    # The re-match in `_boundary_block` has its own capture group, so removing the one in the
+    # compiled pattern no longer changes any behaviour -- the alternative is defensive, not
+    # decorative. Mutating the *re-match* instead is what a real regression would look like:
+    # the leading form would then fall through to `group(0)`, the whole fenced block, markers
+    # included, and every Bot would read as drifted from a policy it is carrying.
+    ("M6", "the appended-form re-match loses its capture group, so the body keeps the markers",
+     're.match(re.escape(BEGIN) + r"\\n?(.*?)" + re.escape(END) + r"\\s*\\Z",',
+     're.match(re.escape(BEGIN) + r"\\n?.*?" + re.escape(END) + r"\\s*\\Z",'),
 ]
 
 

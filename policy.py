@@ -103,6 +103,40 @@ _BLOCK = re.compile(
     re.DOTALL,
 )
 
+# A real fence is introduced at a document boundary: `inject` puts the block at the very start,
+# ahead of the persona, or at the very end for `position="append"`. A canonical policy that
+# *mentions* the markers to explain them has prose in front of the opening one. So the
+# discriminator is what surrounds the fence -- nothing but whitespace on the far side. For the
+# leading form only the start matters, because a top-injected block is followed by the persona.
+_BOUNDARY_BLOCK = re.compile(
+    r"\A\s*" + re.escape(BEGIN) + r"\n?(.*?)" + re.escape(END)
+    + r"|" + re.escape(BEGIN) + r"\n?(.*?)" + re.escape(END) + r"\s*\Z",
+    re.DOTALL,
+)
+
+
+def _boundary_block(text: str) -> "re.Match[str] | None":
+    """The embedded-policy fence, but only when it sits at a document boundary.
+
+    Both alternatives put the policy body in group 1, so callers read one group either way.
+    """
+    m = _BOUNDARY_BLOCK.search(text or "")
+    if m is None:
+        return None
+    if m.group(1) is not None:
+        return m
+    # Second alternative: the appended form, body in group 2. Re-match it on its own so
+    # callers cannot read the wrong group by accident.
+    return re.match(re.escape(BEGIN) + r"\n?(.*?)" + re.escape(END) + r"\s*\Z",
+                    m.group(0), re.DOTALL)
+
+
+# A whole line that is nothing but one of the two markers. Used to strip markers out of a
+# canonical policy before it is fenced, so the two can never nest.
+_MARKER_LINE = re.compile(
+    r"(?m)^[ \t]*(?:" + re.escape(BEGIN) + r"|" + re.escape(END) + r")[ \t]*\n?"
+)
+
 
 class PolicyPathError(ValueError):
     """A shared-policy path that points outside the Hermes root."""
@@ -177,12 +211,21 @@ def policy_body(text: str) -> str:
     file and a Bot's inlined block comparable — hashing either whole file would not, because
     the block additionally carries the Bot's identity and persona.
 
+    The markers only count as a fence when they sit at a document boundary, which is where
+    `inject` always puts them (top, or the very end for `position="append"`). A canonical
+    file that *documents* the markers — "put the rules between <!-- begin --> and <!-- end
+    -->" — has them mid-prose with real rules on both sides. Searching for them anywhere
+    truncated such a file to its example: two policies whose rules differed hashed the same,
+    every Bot built from one reported STALE against it, and `refresh_shared_policy` could
+    never converge because it kept re-injecting the truncated body. A fence that is not at a
+    boundary is documentation, not a fence.
+
     Comments are stripped so that annotating the policy file is not mistaken for changing a
     rule. A drift report that cries wolf on every reworded comment is one people learn to
     ignore, and then it stops being a report.
     """
     raw = text or ""
-    m = _BLOCK.search(raw)
+    m = _boundary_block(raw)
     body = m.group(1) if m else raw
     # A comment is not a rule. Remove whole-line comments along with the line itself, so
     # they don't leave a blank line where a rule used to be; then unwrap any inline comment
@@ -286,8 +329,17 @@ def fingerprint(text: str) -> str:
 
 
 def render_block(text: str) -> str:
-    """The fenced block to inline into a Bot's SOUL.md."""
-    body = (text or "").strip()
+    """The fenced block to inline into a Bot's SOUL.md.
+
+    Any marker lines already in `text` are removed first, but nothing else is touched: this
+    writes the policy exactly as its author wrote it, and normalisation belongs to the
+    fingerprint, not to what a Bot reads. A canonical file that *documents* the markers —
+    showing what they look like to the person editing it — would otherwise end up nested
+    inside the block we add, and a non-greedy fence stops at the inner `END`, cutting the
+    Bot's SOUL.md short mid-policy so that every reader (extract, strip, fingerprint)
+    disagreed about where the policy ended.
+    """
+    body = _MARKER_LINE.sub("", text or "").strip()
     return f"{BEGIN}\n{body}\n{END}"
 
 

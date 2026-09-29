@@ -792,8 +792,17 @@ def forge(s: dict) -> dict:
                         outcome = registry_mod.install(entry["identifier"], entry.get("category"),
                                                        entry.get("name"), root=root)
                         entry["install"] = outcome.get("status")
-                        if outcome.get("status") == "installed" and entry.get("name"):
-                            registry_kept.add(entry["name"])
+                        # Key the keep-set on the installed skill's own directory name, falling
+                        # back to the last segment of the identifier. An entry carrying only an
+                        # `identifier` -- the shape TEMPLATE.json and the 0.18.1 notes recommend
+                        # -- has no `name` at all, so keying on it left the keep-set empty and the
+                        # skill this line had just installed was disabled by apply_plan a few
+                        # lines later. `hermes skills install org/repo/skill` creates the
+                        # directory named by the final segment, so that is the name the profile
+                        # will see.
+                        installed_name = entry.get("name") or entry["identifier"].rstrip("/").rsplit("/", 1)[-1]
+                        if outcome.get("status") == "installed" and installed_name:
+                            registry_kept.add(installed_name)
                 # Re-read config: an install may have added skills to the profile.
                 cfg = load_yaml(cfg_path)
                 hresult = harness_mod.plan(pdir, manifest, cfg, extra_keep=registry_kept)
@@ -811,7 +820,14 @@ def forge(s: dict) -> dict:
                                                            hit.get("name"), root=root)
                             if outcome.get("status") == "installed":
                                 cfg = load_yaml(cfg_path)
-                                hresult = harness_mod.plan(pdir, manifest, cfg)
+                                # extra_keep must survive the re-plan. Re-planning without it
+                                # is what 0.18.0 fixed one path of and this one path undid:
+                                # the registry skills just installed are no longer in the keep
+                                # set, so the very next apply_plan disables them and the Bot
+                                # ships with none of the domain skills its manifest asked for --
+                                # while `missing` is empty and nothing looks wrong.
+                                hresult = harness_mod.plan(pdir, manifest, cfg,
+                                                           extra_keep=registry_kept)
                 cfg = harness_mod.apply_plan(cfg, hresult, set((s.get("taught_skills") or {}).keys()))
                 dump_yaml(cfg_path, cfg)
                 harness = harness_mod.report(manifest, hresult, entries)

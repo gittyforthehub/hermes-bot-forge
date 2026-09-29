@@ -3,6 +3,48 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.3] - 2026-09-29
+
+A fifth independent review found a critical defect in the fingerprint and two high-severity
+ones in registry curation. All reproduced against the pre-fix code before being fixed.
+
+### Fixed
+- **CRITICAL: a canonical policy that documents the fence markers hashed to its own example.**
+  `policy_body` searched for the markers anywhere, so a policy file that *shows* the markers
+  to the person editing it was truncated to the region between the first `BEGIN` and the first
+  `END` — its example. Two policies whose real rules differed hashed identically
+  (`e25e87e409c8` both), every Bot built from one reported STALE against it, and
+  `refresh_shared_policy` could never converge because it kept re-injecting the truncated body.
+  A rename then replaced the Bot's actual rules with the example. The fence now has to sit at a
+  document boundary, which is where `inject` always places it, and `render_block` strips any
+  markers already present so a policy that documents them cannot nest.
+- **The missing-skill repair loop re-planned without `extra_keep`,** discarding the set. Any
+  manifest where a local skill was missing — the loop's precondition — lost its registry
+  skills: installed, then disabled by the next `apply_plan`, with `missing` empty and nothing
+  looking wrong. This is the exact defect 0.18.0 fixed on the other code path.
+- **A registry entry carrying only an `identifier` never entered the keep-set.** There was no
+  `name` to key on, so the skill installed and was immediately disabled — and that entry shape
+  is what `harnesses/TEMPLATE.json` and the 0.18.1 notes recommend. The identifier's last
+  segment is now the fallback name, which is the directory `hermes skills install` creates.
+- **A required registry skill that failed to install reported no gap.** `report()` checked
+  only `status`, never the install outcome, so a 404 at install time was indistinguishable from
+  success. Optional entries are still non-fatal, but a required one now appears in `gaps` with
+  a message that says the install failed.
+
+### Not changed
+- **Nested-under-heading still hashes like flat.** A list whose lines all share one indent is
+  block-wide indentation, which `docs/shared-policy.md` names as cosmetic; a review reported it
+  as a missed nesting case, but every genuine structural change (sub-bullet added, removed,
+  reparented, sibling depth changed) is detected and is now pinned by a test. Fixing the
+  reported case would reintroduce the false positives this normalisation exists to avoid.
+
+### Added
+- `bench/round6_mutation_check.py` — five mutations (K1–K5), one per fix above.
+- `RegistryCurationPathTests`, which drives `forge()` end to end. The existing keep-set test
+  only called `harness.plan()` directly, so two defects downstream of it went unpinned — and
+  the first attempt at these tests passed with the fixes reverted, because a stubbed install
+  never put a skill on disk for the curation to disable.
+
 ## [0.18.2] - 2026-09-29
 
 The full report from the round-4 independent review finally arrived. Its headline finding

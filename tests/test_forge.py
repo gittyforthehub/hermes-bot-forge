@@ -396,6 +396,109 @@ class ForgeHarnessWiring(unittest.TestCase):
             self.assertNotIn("code_execution", out["toolsets"])
 
 
+class RegistryCurationPathTests(ForgeHarnessWiring):
+    """The registry keep-set must survive the WHOLE of forge(), not just a direct plan().
+
+    The existing registry-keep test proves `harness.plan(extra_keep=...)` works. These drive
+    `forge()` itself, because two defects lived downstream of that call and no unit test
+    reached them: the missing-skill repair loop re-planned without `extra_keep` and undid the
+    keep-set, and an entry carrying only an `identifier` (the shape TEMPLATE.json recommends)
+    never entered it because there was no `name` to key on. In both cases the skill installed,
+    was disabled by the next `apply_plan`, and the report showed no gap — a Bot that looks
+    curated and has none of the domain skills its manifest asked for.
+    """
+
+    # `_spec` builds display_name "Sable", so the profile directory is this slug.
+    _PROFILE_SLUG = "sable"
+
+    def _disabled(self, root, out):
+        cfg = forge.load_yaml(root / "profiles" / out["name"] / "config.yaml")
+        return (cfg.get("skills") or {}).get("disabled") or []
+
+    def _seed_off_allowlist_skill(self, root, name="swiftui"):
+        """Put a loadable skill in the profile that the manifest does NOT ask for.
+
+        `plan()` reads `profile_dir/skills`, so this has to land inside the profile the forge
+        run creates -- not the Hermes root. Without it there is nothing to disable and every
+        assertion about curation is vacuously true.
+        """
+        d = root / "profiles" / self._PROFILE_SLUG / "skills" / "software-development" / name
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "SKILL.md").write_text(f"---\nname: {name}\ndescription: d\n---\n")
+        return d
+
+    def test_identifier_only_registry_skill_survives_forge(self):
+        with tempfile.TemporaryDirectory() as t:
+            root = make_root(Path(t))
+            manifest = {"domain": "ios", "label": "iOS", "summary": "s",
+                        "skills": ["nonexistent-local-skill"],
+                        "registry_skills": [
+                            {"identifier": "skills-sh/org/repo/swiftui", "optional": True},
+                        ]}
+            spec = self._spec(root, harness_manifest=manifest, harness_install=True)
+            spec["settings"] = dict(spec["settings"], harness_install=True)
+            # `hermes profile create` is stubbed and materialises the dir; pre-create the skill
+            # so the profile exists and carries an off-allowlist skill before curation runs.
+            (root / "profiles" / self._PROFILE_SLUG).mkdir(parents=True, exist_ok=True)
+            self._seed_off_allowlist_skill(root)
+
+            installed = []
+            import registry as registry_mod
+            import harness as harness_mod
+
+            def fake_install(identifier, category=None, name=None, root=None):
+                installed.append((identifier, name))
+                return {"status": "installed"}
+
+            with mock.patch.object(registry_mod, "search", return_value=[]), \
+                    mock.patch.object(registry_mod, "install", side_effect=fake_install), \
+                    mock.patch.object(registry_mod, "list_installed", return_value=[]):
+                out = self._run(spec, root)
+
+            self.assertTrue(out["ok"], out.get("error"))
+            self.assertTrue(installed, "the registry entry should have been installed")
+            # Precondition, checked directly against plan(): with no extra_keep this skill is
+            # off the allowlist, so the assertion below is testing something real.
+            bare = harness_mod.plan(root / "profiles" / self._PROFILE_SLUG, manifest, {"skills": {}})
+            self.assertIn("swiftui", bare["disabled"],
+                          "precondition: swiftui is off the allowlist without extra_keep")
+            self.assertNotIn("swiftui", self._disabled(root, out),
+                             "the skill was installed and then disabled by the same pass")
+
+    def test_keep_set_survives_the_missing_skill_repair_loop(self):
+        with tempfile.TemporaryDirectory() as t:
+            root = make_root(Path(t))
+            manifest = {"domain": "beekeeping", "label": "B", "summary": "hives",
+                        "skills": ["nonexistent-skill"],
+                        "registry_skills": [
+                            {"identifier": "skills-sh/org/repo/swiftui",
+                             "name": "swiftui", "optional": True},
+                        ]}
+            spec = self._spec(root, harness_manifest=manifest, harness_install=True)
+            spec["settings"] = dict(spec["settings"], harness_install=True)
+            (root / "profiles" / self._PROFILE_SLUG).mkdir(parents=True, exist_ok=True)
+            self._seed_off_allowlist_skill(root)
+
+            def fake_search(query, limit=10):
+                # The repair loop's lookup must find something, or the loop never runs and the
+                # re-plan it guards is never exercised.
+                return [{"name": query, "identifier": f"skills-sh/org/repo/{query}",
+                         "source": "skills.sh", "trust_level": "community"}]
+
+            def fake_install(identifier, category=None, name=None, root=None):
+                return {"status": "installed"}
+
+            import registry as registry_mod
+            with mock.patch.object(registry_mod, "search", side_effect=fake_search), \
+                    mock.patch.object(registry_mod, "install", side_effect=fake_install), \
+                    mock.patch.object(registry_mod, "list_installed", return_value=[]):
+                out = self._run(spec, root)
+
+            self.assertTrue(out["ok"], out.get("error"))
+            self.assertNotIn("swiftui", self._disabled(root, out),
+                             "the repair loop re-planned without extra_keep and dropped it")
+
+
 def _load_plugin_package():
     """Load the repo root as an importable package so `__init__.py` loads as written.
 

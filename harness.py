@@ -331,7 +331,16 @@ def resolve_registry(registry_mod, manifest: dict) -> list[dict]:
 def report(manifest: dict, result: dict, registry_entries: list[dict] | None = None) -> dict:
     """The `harness` block returned to the caller: what was kept, installed, and still missing."""
     optional = [e for e in (registry_entries or []) if e.get("optional")]
-    required_missing = [e for e in (registry_entries or []) if not e.get("optional") and e.get("status") != "resolved"]
+    # A required entry counts as missing unless it BOTH resolved and, if it was handed to the
+    # installer, actually installed. Checking `status` alone let a required skill that 404'd at
+    # install time report "resolved" and produce no gap at all -- the Bot shipped without it and
+    # the report said everything was fine. `install` is absent when no install was attempted
+    # (the profile is being audited rather than built), which is not a failure.
+    required_missing = [
+        e for e in (registry_entries or [])
+        if not e.get("optional")
+        and (e.get("status") != "resolved" or e.get("install") == "failed")
+    ]
     return {
         "domain": manifest.get("domain"),
         "label": manifest.get("label"),
@@ -344,7 +353,9 @@ def report(manifest: dict, result: dict, registry_entries: list[dict] | None = N
         "registry": registry_entries or [],
         "gaps": (
             [f"skill not installed and not found: {s}" for s in result["missing"]]
-            + [f"registry skill unresolved: {e.get('identifier') or e.get('query')} ({e.get('status')})"
+            + [f"registry skill {e.get('status') if e.get('install') == 'failed' else 'unresolved'}: "
+               f"{e.get('identifier') or e.get('query')}"
+               f"{' (install failed)' if e.get('install') == 'failed' else ''}"
                for e in required_missing]
         ),
         "optional_unresolved": [e.get("identifier") or e.get("query") for e in optional

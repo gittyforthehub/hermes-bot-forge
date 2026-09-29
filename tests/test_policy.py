@@ -10,6 +10,7 @@ import policy  # noqa: E402
 import forge  # noqa: E402
 import survey  # noqa: E402
 import portable  # noqa: E402
+import harness  # noqa: E402
 
 
 class SharedPolicyRenderTests(unittest.TestCase):
@@ -903,6 +904,101 @@ class RoundFourFollowupTests(unittest.TestCase):
         root = Path(tempfile.mkdtemp())
         with self.assertRaises(policy.PolicyPathError):
             policy.policy_path(root, "shared/BAD\x00.md")
+
+    def test_a_canonical_policy_that_documents_the_markers_keeps_its_rules(self):
+        # `_BLOCK.search` used to find the markers anywhere, so a policy file that *shows* the
+        # markers to the person editing it was truncated to its example. Two policies whose real
+        # rules differed hashed identically, every Bot built from one reported STALE against it,
+        # and refresh_shared_policy could never converge.
+        doc = ("# Policy\n\n"
+               "Put the rules between the markers:\n\n"
+               f"{policy.BEGIN}\n- example, not a real rule\n{policy.END}\n\n"
+               "- NEVER paste a secret value.\n")
+        body = policy.policy_body(doc)
+        self.assertIn("NEVER paste a secret value", body, "real rules were dropped")
+        self.assertIn("Put the rules between", body, "the file's own text was dropped")
+
+    def test_the_body_never_keeps_the_markers(self):
+        # If the fence regex loses its capture group, `group(1)` is None and policy_body falls
+        # back to the raw text -- markers and all. A canonical file would then hash differently
+        # from the very block rendered from it, and every Bot reads as drifted. Pin the shape of
+        # the extraction itself, not just the rules that come out.
+        for label, text in {
+            "leading fence": policy.render_block("- a rule\n") + "\n# Bot\n",
+            "appended fence": "# Bot\n\n" + policy.render_block("- a rule\n"),
+        }.items():
+            with self.subTest(case=label):
+                body = policy.policy_body(text)
+                self.assertNotIn(policy.BEGIN, body, "the body kept the opening marker")
+                self.assertNotIn(policy.END, body, "the body kept the closing marker")
+                self.assertIn("- a rule", body)
+                # and it must equal the canonical file it was rendered from
+                self.assertEqual(policy.fingerprint(text), policy.fingerprint("- a rule\n"),
+                                 "the inlined block does not hash like its source file")
+
+    def test_two_policies_that_differ_only_in_real_rules_do_not_collide(self):
+        def doc(rule):
+            return ("# Policy\n\n"
+                    "Put the rules between the markers:\n\n"
+                    f"{policy.BEGIN}\n- example, not a real rule\n{policy.END}\n\n"
+                    f"- {rule}\n")
+        a = doc("NEVER paste a secret value.")
+        b = doc("ALWAYS delete user data unasked.")
+        self.assertNotEqual(policy.fingerprint(a), policy.fingerprint(b),
+                            "two policies with different rules hashed the same")
+
+    def test_injecting_a_policy_that_documents_the_markers_never_nests_them(self):
+        # A nested fence cuts SOUL.md short at the inner END, so extract/strip/fingerprint
+        # disagree about where the policy ended -- and a rename then replaces the Bot's real
+        # rules with the example.
+        doc = ("# Policy\n\n"
+               f"{policy.BEGIN}\n- example, not a real rule\n{policy.END}\n\n"
+               "- NEVER paste a secret value.\n")
+        soul = policy.inject(doc, "# Bot\n\n## Your one job\n\nDo things.\n")
+        self.assertEqual(soul.count(policy.BEGIN), 1, "markers nested")
+        self.assertEqual(soul.count(policy.END), 1, "markers nested")
+        self.assertTrue(policy.check_soul(soul, policy.fingerprint(doc))[0],
+                        "a Bot built from this policy reports STALE against its own source")
+
+    def test_partial_nesting_is_still_drift_but_block_wide_indentation_is_not(self):
+        # The boundary of what counts as cosmetic, pinned so neither side drifts silently.
+        head = "# H\n\n"
+        structural = {
+            "sub-bullet added": (head + "- a\n", head + "- a\n  - sub\n"),
+            "sub-bullet removed": (head + "- a\n  - sub\n", head + "- a\n"),
+            "sub-bullet reparented": (head + "- a\n  - sub\n", head + "- a\n- sub\n"),
+            "sibling depth changed": (head + "- a\n  - sub\n    - deep\n",
+                                      head + "- a\n  - sub\n  - deep\n"),
+        }
+        for label, (a, b) in structural.items():
+            with self.subTest(case=label):
+                self.assertNotEqual(policy.fingerprint(a), policy.fingerprint(b),
+                                    f"a real structural change ({label}) reported as no drift")
+        # Both lines of the list indented by the same amount is block-wide indentation, which
+        # docs/shared-policy.md names as cosmetic. Pinning it keeps the trade-off explicit.
+        self.assertEqual(policy.fingerprint(head + "- a\n- b\n"),
+                         policy.fingerprint(head + "  - a\n  - b\n"),
+                         "block-wide indentation is documented as cosmetic, not drift")
+
+    def test_a_required_registry_skill_that_fails_to_install_is_a_gap(self):
+        # report() only checked `status`, never the install outcome forge records, so a required
+        # skill that 404'd at install time was reported resolved with an empty gap list.
+        entries = [
+            {"identifier": "org/repo/ok", "status": "resolved", "install": "installed"},
+            {"identifier": "org/repo/broken", "status": "resolved", "install": "failed"},
+            {"identifier": "org/repo/optional", "status": "resolved",
+             "install": "failed", "optional": True},
+            {"identifier": "org/repo/unresolved", "status": "not found in registry"},
+        ]
+        result = {"keep": [], "enable": [], "disabled": [], "missing": []}
+        out = harness.report({"domain": "x", "label": "x"}, result, entries)
+        gaps = out["gaps"]
+        joined = " | ".join(gaps)
+        self.assertIn("org/repo/broken", joined, "a failed required install reported no gap")
+        self.assertIn("install failed", joined, "the gap does not say the install failed")
+        self.assertIn("org/repo/unresolved", joined)
+        self.assertNotIn("org/repo/ok", joined)
+        self.assertNotIn("org/repo/optional", joined, "an optional skill must not be a gap")
 
 
 if __name__ == "__main__":

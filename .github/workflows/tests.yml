@@ -63,6 +63,14 @@ jobs:
         # shared_policy_path escaped the create as a traceback. All four are false negatives
         # or silent overrides, so reverting any one must fail the suite.
         run: python bench/round5_mutation_check.py
+      - name: Round-6 shared-policy and registry mutation check
+        # The critical one: a canonical policy that *documents* the fence markers was truncated
+        # to its own example, so two policies with different rules hashed identically and every
+        # Bot built from one reported drift it could never clear. Alongside it, the registry
+        # keep-set was dropped by the repair loop and never entered at all for an entry carrying
+        # only an identifier, and a failed required install reported no gap. Reverting any one
+        # must fail the suite.
+        run: python bench/round6_mutation_check.py
       - name: External-skill mutation check
         # The process benchmark's oracle once called the same helpers it was checking, so
         # breaking external-dir discovery broke both sides and all 46 gates still passed.
