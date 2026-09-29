@@ -637,13 +637,17 @@ def forge(s: dict) -> dict:
             try:
                 pol.parent.mkdir(parents=True, exist_ok=True)
                 pol.write_text(policy_mod.STARTER_POLICY)
-            except OSError as exc:
+            except (OSError, ValueError) as exc:
+                # ValueError too: `Path.write_text` raises `embedded null byte` on a path
+                # containing NUL. policy_path now refuses one, but this is the write that would
+                # actually blow up, and an uncaught ValueError here escapes the create as a
+                # traceback rather than a reported failure.
                 # A Bot that cannot be given the shared floor is not silently built without it.
                 return {"ok": False, "error": f"could not write shared policy {pol}: {exc}"[:200],
                         "rolled_back": False}
         try:
             text = pol.read_text()
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             return {"ok": False, "error": f"could not read shared policy {pol}: {exc}"[:200],
                     "rolled_back": False}
         # Reject on the policy *body*, not on text.strip(): a file containing only comments

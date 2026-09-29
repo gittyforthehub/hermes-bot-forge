@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import policy  # noqa: E402
 import forge  # noqa: E402
 import survey  # noqa: E402
+import portable  # noqa: E402
 
 
 class SharedPolicyRenderTests(unittest.TestCase):
@@ -865,6 +866,43 @@ class RoundFourFollowupTests(unittest.TestCase):
                 bots = found.get("bots", found) if isinstance(found, dict) else found
                 self.assertTrue(bots, "scan_hermes returned no bots")
                 self.assertIn("quarterly revenue charts", bots[0]["one_job"])
+
+    def _bot_with_policy(self, root):
+        prof = root / "profiles" / "solo"
+        prof.mkdir(parents=True)
+        (prof / "SOUL.md").write_text(
+            policy.BEGIN + policy.STARTER_POLICY + policy.END +
+            "\n\n# Solo\n\n## Your one job\n\nDo solo things.\n")
+        (prof / "profile.yaml").write_text(
+            "name: solo\nui_meta:\n  hermes-bots:\n    title: Solo\n")
+        (prof / "config.yaml").write_text("name: solo\n")
+        return prof
+
+    def test_shared_template_does_not_carry_the_originating_bots_policy(self):
+        # A template has no `shared_policy` key, so shipping the block in soul_md made an
+        # importing Bot inherit the ORIGINAL owner's rules inlined in its persona, and
+        # check_policies called the copy current -- the importer's own policy choice silently
+        # replaced by someone else's.
+        root = Path(tempfile.mkdtemp())
+        tpl = portable.build_template(self._bot_with_policy(root), root)
+        self.assertNotIn("forge:shared-policy:begin", tpl["soul_md"])
+        self.assertIn("Do solo things.", tpl["soul_md"], "persona must survive the strip")
+
+    def test_degenerate_policy_path_is_refused_with_a_readable_error(self):
+        # '' , '.' and './' all name the root DIRECTORY, which passed containment and then
+        # failed far away as IsADirectoryError or "no shared policy at <root>".
+        root = Path(tempfile.mkdtemp())
+        for bad in ["", ".", "./"]:
+            with self.subTest(path=bad):
+                with self.assertRaises(policy.PolicyPathError):
+                    policy.policy_path(root, bad)
+
+    def test_nul_byte_in_policy_path_is_refused_before_the_write(self):
+        # A NUL survives Path() and normpath(), so containment passed and write_text raised
+        # `ValueError: embedded null byte` -- escaping the create as a traceback.
+        root = Path(tempfile.mkdtemp())
+        with self.assertRaises(policy.PolicyPathError):
+            policy.policy_path(root, "shared/BAD\x00.md")
 
 
 if __name__ == "__main__":

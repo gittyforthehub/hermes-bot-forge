@@ -142,6 +142,20 @@ def policy_path(hermes_root: Path, relative: str | None = None) -> Path:
         raise PolicyPathError(
             f"shared_policy_path must be relative to the Hermes root, got {relative!r}"
         )
+    # An empty, `.` or `./` path names the root DIRECTORY, which passes every containment
+    # check below and then fails much later as `IsADirectoryError` from the write, or as
+    # "no shared policy at <root>" from a read. Neither names the actual mistake, so refuse
+    # it here where the message can.
+    if relative is not None and not rel.parts:
+        raise PolicyPathError(
+            "shared_policy_path must name a file inside the Hermes root, not the root itself"
+        )
+    # A NUL byte survives Path() and normpath() untouched, so containment passes and the
+    # write then raises `ValueError: embedded null byte` -- an exception the create path
+    # does not catch, escaping as a traceback instead of a reported failure. Reject it at the
+    # boundary where it arrives from a downloaded spec.
+    if chr(0) in str(relative):
+        raise PolicyPathError("shared_policy_path must not contain a NUL byte")
     candidate = root / rel
     try:
         lex = Path(os.path.normpath(str(candidate)))

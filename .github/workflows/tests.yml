@@ -51,6 +51,18 @@ jobs:
         # normaliser that made a nested rule hash identically to a flat one, so real
         # structural changes reported as no drift. Reverting any one must fail the suite.
         run: python bench/round3_mutation_check.py
+      - name: Round-4 shared-policy mutation check
+        # The round-4 fix to the drift normaliser (a list re-indented across a blank line
+        # hashing identically to a flat one) must stay load-bearing.
+        run: python bench/round4_mutation_check.py
+      - name: Round-5 shared-policy mutation check
+        # Round 4's review also found, in code that already had tests: policy_body was not a
+        # fixed point, so renaming a Bot made its own policy report STALE; scan_hermes
+        # sliced the persona away behind the inlined policy, disarming the duplicate-Bot
+        # guard; an exported template carried the originating Bot's rules; and a NUL in
+        # shared_policy_path escaped the create as a traceback. All four are false negatives
+        # or silent overrides, so reverting any one must fail the suite.
+        run: python bench/round5_mutation_check.py
       - name: External-skill mutation check
         # The process benchmark's oracle once called the same helpers it was checking, so
         # breaking external-dir discovery broke both sides and all 46 gates still passed.

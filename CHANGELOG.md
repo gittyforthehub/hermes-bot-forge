@@ -3,6 +3,44 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.2] - 2026-09-29
+
+The full report from the round-4 independent review finally arrived. Its headline finding
+turned out to be documented intended behaviour, but the report carried four more defects —
+three of them false negatives, the exact failure mode that makes a checker worse than not
+having one. All four were reproduced against the pre-fix code before being fixed.
+
+### Fixed
+- **`policy_body` was not a fixed point, so renaming a Bot made its own policy report
+  STALE.** `_dedent` splits on blank lines, so running it *before* the `\n{3,}` collapse
+  consumed a double blank line; normalising the result again consumed the rest. Because
+  `ensure_identity` re-injects `policy_body(soul)`, renaming a Bot rewrote its inlined
+  policy into a form that no longer hashed like the file it came from — a Bot reporting
+  drift for a policy it had never violated. Blank-line runs are now collapsed *before*
+  dedenting.
+- **`scan_hermes` was blind to the persona of every Bot carrying a shared policy.** It
+  sliced the first 2000 characters of `SOUL.md`; the starter policy is 1984 characters, so
+  `one_job` came back empty and the duplicate-Bot guard compared against nothing. That
+  silently disarmed the guard for exactly the Bots it exists to catch. The policy block is
+  now stripped before the persona is read.
+- **An exported template carried the originating Bot's inlined policy.** A template has no
+  `shared_policy` key, so `share_agent` → `import_agent` built the receiving Bot with the
+  *original owner's* rules already in its persona, and `check_policies` called the copy
+  current — silently replacing the importer's own policy choice with someone else's.
+  `build_template` now strips the block.
+- **A NUL byte in `shared_policy_path` escaped the create as a traceback.** It survives
+  `Path()` and `normpath()`, so containment passed and `write_text` raised
+  `ValueError: embedded null byte`, which the create path did not catch. Now refused at
+  validation, with the write path also catching `ValueError` as defense in depth.
+- **A degenerate `shared_policy_path` (`""`, `"."`, `"./"`) named the root *directory*.** It
+  passed every containment check and then failed far away as `IsADirectoryError` or
+  "no shared policy at \<root\>", neither of which names the mistake.
+
+### Added
+- `bench/round5_mutation_check.py` — four mutations (J1–J4), one per fix above, each of
+  which must fail the suite when reverted. Wired into CI, along with the round-4 gate,
+  which was written but never added to the workflow.
+
 ## [0.18.1] - 2026-09-29
 
 A patch on top of 0.18.0, from forking the real iOS harness. `0.18.1` rather than a

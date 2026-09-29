@@ -33,12 +33,9 @@ MUTATIONS: list[tuple[str, str, str, str, str]] = [
         "G3", "policy_path expands ~ on the joined path again",
         "policy.py",
         "    rel = Path(relative).expanduser() if relative is not None else Path(DEFAULT_RELATIVE)\n"
-        "    if rel.is_absolute():\n"
-        "        raise PolicyPathError(\n"
-        '            f"shared_policy_path must be relative to the Hermes root, got {relative!r}"\n'
-        "        )\n"
-        "    candidate = root / rel\n",
-        "    candidate = (root / (relative or DEFAULT_RELATIVE)).expanduser()\n",
+        "    if rel.is_absolute():\n",
+        "    rel = Path(relative or DEFAULT_RELATIVE)\n"
+        "    if rel.is_absolute():\n",
     ),
     (
         "G4", "health reads the raw SOUL again (name pushed past 400 chars)",
