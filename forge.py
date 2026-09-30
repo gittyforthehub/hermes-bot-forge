@@ -79,7 +79,24 @@ def cli_env(root: Path):
     return env
 
 
+def _is_temp_root(root) -> bool:
+    """True when `root` lives under the system temp dir (tests, mutation gates, scratch clones)."""
+    import tempfile
+    try:
+        r = Path(root).resolve()
+        tmp = Path(tempfile.gettempdir()).resolve()
+    except (OSError, TypeError):
+        return False
+    return r == tmp or tmp in r.parents
+
+
 def run(root, *args, timeout=180, check=True):
+    # Never drive the real `hermes` CLI against a Hermes root in the system temp dir. That only
+    # happens under tests and mutation gates, and it is not harmless: `hermes` republishes its
+    # install launchers bound to the store under HERMES_HOME, so a throwaway root left the
+    # user's `hermes` command pointing at a Python inside a deleted temp dir.
+    if _is_temp_root(root) and os.environ.get("BOT_FORGE_ALLOW_TEMP_ROOT") != "1":
+        raise RuntimeError(f"refusing to run `hermes {' '.join(args[:2])}` against a temp Hermes root {root}")
     p = subprocess.run(["hermes", *args], capture_output=True, text=True, stdin=subprocess.DEVNULL,
                        timeout=timeout, env=cli_env(root))
     if check and p.returncode != 0:

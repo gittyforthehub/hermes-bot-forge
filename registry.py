@@ -28,6 +28,10 @@ def _run(args: list[str], root: Path, timeout: int = TIMEOUT):
     exe = shutil.which("hermes")
     if not exe:
         raise RegistryError("`hermes` CLI not on PATH")
+    import forge
+    if forge._is_temp_root(root) and os.environ.get("BOT_FORGE_ALLOW_TEMP_ROOT") != "1":
+        # See forge.run: the real CLI against a throwaway root rewrote the user's launcher.
+        raise RegistryError(f"refusing to run `hermes` against a temp Hermes root {root}")
     env = {k: v for k, v in os.environ.items() if not k.startswith("HERMES_PROFILE")}
     return subprocess.run([exe] + args, capture_output=True, text=True, timeout=timeout, cwd=str(root), env=env)
 

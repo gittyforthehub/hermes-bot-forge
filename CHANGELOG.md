@@ -31,6 +31,14 @@ installed plugin are fixed.
   compared against Bots that no longer existed and the error never named the cache. The
   roster is now re-read on every call; only the directory scan is cached.
 
+- **The test suite and mutation gates rewrote the user's `hermes` command.** A forge test
+  with a temp `hermes_root` reached the real CLI (`hermes profile create`); Hermes then
+  republished its install launchers bound to that temp root's runtime, so once the temp dir
+  was deleted `hermes` pointed at a Python that no longer existed. `forge.run` and
+  `registry._run` now refuse a Hermes root under the system temp dir
+  (`BOT_FORGE_ALLOW_TEMP_ROOT=1` overrides). Verified with a tripwire `hermes` on PATH: zero
+  real-CLI calls across the suite and every gate.
+
 ### Gates
 - `bench/round7_mutation_check.py` (L1–L3), one mutation per fix above, wired into CI.
 - `round6` K3/K5 retargeted at `harness.curate`, where that code now lives; both still caught.

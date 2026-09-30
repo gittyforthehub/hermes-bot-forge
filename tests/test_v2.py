@@ -76,6 +76,31 @@ import doctor as _never  # must fail here, proving the plugin dir is NOT on sys.
         self.assertIn("RC", out.stdout, out.stderr[-800:])
 
 
+class TempRootGuard(unittest.TestCase):
+    """The real `hermes` CLI, run against a throwaway HERMES_HOME, republished the user's
+    install launchers bound to that root's runtime store. When the temp dir was deleted the
+    user's `hermes` command pointed at a Python that no longer existed. Tests and gates must
+    never reach the real CLI with a temp root."""
+
+    def test_forge_run_refuses_a_temp_root(self):
+        with tempfile.TemporaryDirectory() as t, \
+                mock.patch.object(forge.subprocess, "run", side_effect=AssertionError("hermes was run")):
+            with self.assertRaises(RuntimeError) as ctx:
+                forge.run(Path(t) / "hr", "profile", "create", "x")
+            self.assertIn("temp Hermes root", str(ctx.exception))
+
+    def test_registry_refuses_a_temp_root(self):
+        import registry
+        with tempfile.TemporaryDirectory() as t, \
+                mock.patch.object(registry.shutil, "which", return_value="/bin/hermes"), \
+                mock.patch.object(registry.subprocess, "run", side_effect=AssertionError("hermes was run")):
+            with self.assertRaises(registry.RegistryError):
+                registry._run(["skills", "list"], Path(t))
+
+    def test_real_root_is_not_a_temp_root(self):
+        self.assertFalse(forge._is_temp_root(Path.home() / ".hermes"))
+
+
 class SurveyRosterFreshness(unittest.TestCase):
     """The workspace index is cached for 6h, and it carried the Bot roster with it. Delete a
     Bot and recreate one for the same job, and the duplicate guard refused it against a Bot
