@@ -58,8 +58,15 @@ def register(ctx):
         parser.add_argument("--json", action="store_true", help="machine-readable output")
 
     def _doctor_handler(args):
-        import doctor
-        return doctor.cli(args)
+        # Run doctor.py as a script, like the check_install tool does. Hermes loads this plugin
+        # as a package, so its directory is not on sys.path and a bare `import doctor` raised
+        # ModuleNotFoundError — `hermes bot-forge-doctor` could never run.
+        import subprocess
+        import sys
+        cmd = [sys.executable, str(Path(__file__).parent / "doctor.py")]
+        if getattr(args, "json", False):
+            cmd.append("--json")
+        return subprocess.run(cmd).returncode
 
     try:
         ctx.register_cli_command(name="bot-forge-doctor", help="Check that Bot Forge is set up correctly",

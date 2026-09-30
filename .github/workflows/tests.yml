@@ -71,6 +71,10 @@ jobs:
         # only an identifier, and a failed required install reported no gap. Reverting any one
         # must fail the suite.
         run: python bench/round6_mutation_check.py
+      - name: Round-7 (v2) doctor, survey roster and update-in-place mutation check
+        # 0.19.0: the doctor CLI's bare import, the 6-hour stale Bot roster, and update_agent's
+        # harness path. Reverting any one must fail the suite.
+        run: python bench/round7_mutation_check.py
       - name: External-skill mutation check
         # The process benchmark's oracle once called the same helpers it was checking, so
         # breaking external-dir discovery broke both sides and all 46 gates still passed.

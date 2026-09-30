@@ -3,6 +3,38 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-09-30
+
+Bot Forge v2: an existing Bot can be made an expert in place, and three defects in the
+installed plugin are fixed.
+
+### Added
+- **`update_agent(harness=...)` / `harness_manifest=...`** — apply an expert harness to an
+  existing Bot without recreating it. Runs the same resolve and curate path `create_agent`
+  uses (now shared as `harness.resolve_request` and `harness.curate`, so the two cannot drift):
+  installs registry skills, disables everything off the allowlist across every skill root,
+  adds the manifest's toolsets, and merges its approvals into `## Ask first` without
+  duplicating them. Backs up `config.yaml` and `SOUL.md`; memory and chat history are kept.
+  An unknown domain or a manifest naming no skills is refused, never applied as a no-op.
+- Bundled harnesses `legal` and `tax`, alongside `ios`.
+
+### Changed
+- The bundled skill is renamed `bot-forge` → **`bot-forge-v2`** (`bot-forge:bot-forge-v2`).
+  The plugin id stays `bot-forge`, so existing `plugins.enabled` entries keep working.
+
+### Fixed
+- **`hermes bot-forge-doctor` always crashed** with `ModuleNotFoundError: No module named
+  'doctor'`. Hermes loads the plugin as a package, so a bare `import doctor` never resolved;
+  the handler now runs `doctor.py` as a script, as `check_install` already did.
+- **A deleted Bot blocked its replacement for up to six hours.** The workspace index cached
+  the Bot roster together with the (expensive) directory scan, so the duplicate-job guard
+  compared against Bots that no longer existed and the error never named the cache. The
+  roster is now re-read on every call; only the directory scan is cached.
+
+### Gates
+- `bench/round7_mutation_check.py` (L1–L3), one mutation per fix above, wired into CI.
+- `round6` K3/K5 retargeted at `harness.curate`, where that code now lives; both still caught.
+
 ## [0.18.3] - 2026-09-29
 
 A fifth independent review found a critical defect in the fingerprint and two high-severity

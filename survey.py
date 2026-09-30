@@ -427,6 +427,11 @@ def workspace_index(root: Path, settings: dict | None = None, now: float | None 
     if not refresh:
         cached = load_index(root, roots, now)
         if cached:
+            # Only the workspace scan is worth caching. The Bot roster is a handful of small
+            # files and goes stale the moment a Bot is deleted: serving it from a 6-hour cache
+            # made the duplicate guard refuse a replacement Bot against one that no longer
+            # existed, with an error that never mentioned the cache.
+            cached["hermes"] = scan_hermes(root)
             return cached
     return build_index(root, roots, now)
 

@@ -535,66 +535,31 @@ def forge(s: dict) -> dict:
     # it inside the domain guard meant a spec carrying only `harness_manifest` built an
     # uncurated Bot and returned ok:true — the user was told they got an expert and got a
     # generalist. That is the one path the docs push for every domain that does not ship.
-    inline_manifest = s.get("harness_manifest")
-    # A string is a valid manifest form, so parse it before anything reads a key off it.
-    if isinstance(inline_manifest, str):
-        try:
-            inline_manifest = json.loads(inline_manifest)
-        except json.JSONDecodeError as exc:
-            return {"ok": False, "error": f"harness_manifest is not valid JSON: {exc}"[:200]}
-    # Absent vs present-but-wrong: `None` means no inline manifest at all, which is the
-    # ordinary path. Treating it as a bad value rejected every harness build.
-    if inline_manifest is None:
-        inline_manifest = {}
-    # `not isinstance` rather than `inline_manifest and not isinstance`: a falsy non-dict
-    # (`[]`, `0`, `false`) skipped the old truthiness guard and reached `.get()` below,
-    # raising AttributeError outside the rollback handler — after the profile existed.
-    if not isinstance(inline_manifest, dict):
-        return {"ok": False, "error": "harness_manifest must be a JSON object"}
-    domain = s.get("harness") or s.get("domain") or inline_manifest.get("domain")
-    if domain or inline_manifest:
-        try:
-            import harness as harness_mod
+    try:
+        import harness as harness_mod
 
-            manifest = inline_manifest or harness_mod.load_manifest(str(domain or ""), root)
-            if not manifest:
-                # An explicit manifest that cannot be read is an error, not a no-op: the
-                # caller asked for curation and must not receive an uncurated Bot silently.
-                if inline_manifest:
-                    err = ("harness_manifest has no 'skills' key — an expert must name at "
-                           "least one skill; use a domain manifest from harnesses/ for a "
-                           "ready-made set")
-                else:
-                    err = f"no harness manifest for '{domain}'"
-                harness = {"domain": domain, "error": err, "available": harness_mod.available_domains()}
-            elif not harness_mod._name_list(manifest.get("skills")) and not harness_mod._name_list(
-                    manifest.get("skill_categories")):
-                # A manifest that names no skills and no categories would happily build a Bot
-                # with nothing but the floor — a "harness" that curates to zero. Report it
-                # rather than shipping a generalist under a specialist's name.
-                harness = {"domain": domain, "error":
-                           "harness_manifest names no skills and no skill_categories — an "
-                           "expert must specify at least one skill",
-                           "available": harness_mod.available_domains()}
-            else:
-                harness = {"domain": manifest.get("domain"), "label": manifest.get("label"),
-                           "manifest": manifest}
-                if not s.get("skill_categories"):
-                    s["skill_categories"] = list(manifest.get("skill_categories") or [])
-                if not s.get("toolsets"):
-                    s["toolsets"] = list(manifest.get("toolsets") or [])
-                defaults = manifest.get("defaults") or {}
-                if not s.get("sandbox") and defaults.get("sandbox"):
-                    s["sandbox"] = defaults["sandbox"]
-                if s.get("approvals") is None:
-                    # Accept `approvals` at the top level too. It was documented there in the
-                    # README, so a manifest copied from it silently lost every approval
-                    # prompt — which for the iOS harness means no App Store or signing gate.
-                    approvals = defaults.get("approvals") or manifest.get("approvals")
-                    if approvals:
-                        s["approvals"] = list(approvals)
-        except Exception as exc:
-            harness = {"domain": domain, "error": f"harness resolution skipped: {exc}"[:200]}
+        manifest, herr = harness_mod.resolve_request(s.get("harness") or s.get("domain"),
+                                                     s.get("harness_manifest"), root)
+    except Exception as exc:
+        manifest, herr = None, f"harness resolution skipped: {exc}"[:200]
+    if herr and herr.startswith(("harness_manifest is not valid JSON", "harness_manifest must be")):
+        return {"ok": False, "error": herr}
+    if herr:
+        harness = {"domain": s.get("harness") or s.get("domain"), "error": herr,
+                   "available": harness_mod.available_domains()}
+    elif manifest:
+        harness = {"domain": manifest.get("domain"), "label": manifest.get("label"), "manifest": manifest}
+        if not s.get("skill_categories"):
+            s["skill_categories"] = list(manifest.get("skill_categories") or [])
+        if not s.get("toolsets"):
+            s["toolsets"] = list(manifest.get("toolsets") or [])
+        defaults = manifest.get("defaults") or {}
+        if not s.get("sandbox") and defaults.get("sandbox"):
+            s["sandbox"] = defaults["sandbox"]
+        if s.get("approvals") is None:
+            approvals = harness_mod.manifest_approvals(manifest)
+            if approvals:
+                s["approvals"] = approvals
     # Two Bots with the same job is what makes a roster useless. Check before building, not after.
     guard = None
     if settings.get("workspace_survey", True):
@@ -780,57 +745,11 @@ def forge(s: dict) -> dict:
                 import harness as harness_mod
                 import registry as registry_mod
 
-                manifest = harness["manifest"]
-                entries = harness_mod.resolve_registry(registry_mod, manifest) if settings.get("harness_install", True) else []
-                # Skills a manifest pulls from a registry belong to the curated set even though
-                # they are not in `manifest["skills"]`. Collect their names so the plan below
-                # keeps them -- otherwise they install and are disabled in the same pass, and
-                # the Bot ends up with none of the domain skills its manifest asked for.
-                registry_kept: set[str] = set()
-                for entry in entries:
-                    if entry.get("status") == "resolved" and entry.get("identifier"):
-                        outcome = registry_mod.install(entry["identifier"], entry.get("category"),
-                                                       entry.get("name"), root=root)
-                        entry["install"] = outcome.get("status")
-                        # Key the keep-set on the installed skill's own directory name, falling
-                        # back to the last segment of the identifier. An entry carrying only an
-                        # `identifier` -- the shape TEMPLATE.json and the 0.18.1 notes recommend
-                        # -- has no `name` at all, so keying on it left the keep-set empty and the
-                        # skill this line had just installed was disabled by apply_plan a few
-                        # lines later. `hermes skills install org/repo/skill` creates the
-                        # directory named by the final segment, so that is the name the profile
-                        # will see.
-                        installed_name = entry.get("name") or entry["identifier"].rstrip("/").rsplit("/", 1)[-1]
-                        if outcome.get("status") == "installed" and installed_name:
-                            registry_kept.add(installed_name)
-                # Re-read config: an install may have added skills to the profile.
                 cfg = load_yaml(cfg_path)
-                hresult = harness_mod.plan(pdir, manifest, cfg, extra_keep=registry_kept)
-                if hresult["missing"] and settings.get("harness_install", True):
-                    # A missing skill is a *local* name (ios-app-delivery), but `hermes skills
-                    # install` needs a path-shaped registry identifier (org/repo/skill). Passing
-                    # the name straight through could never succeed, so look it up first. The
-                    # old loop hardcoded one category and stopped after a single success, so at
-                    # most one repair ever ran and the rest were silently reported as gaps.
-                    for name in list(hresult["missing"]):
-                        hit = harness_mod.resolve_registry_skill(
-                            registry_mod, {"query": name, "optional": False})
-                        if hit.get("status") == "resolved" and hit.get("identifier"):
-                            outcome = registry_mod.install(hit["identifier"], hit.get("category"),
-                                                           hit.get("name"), root=root)
-                            if outcome.get("status") == "installed":
-                                cfg = load_yaml(cfg_path)
-                                # extra_keep must survive the re-plan. Re-planning without it
-                                # is what 0.18.0 fixed one path of and this one path undid:
-                                # the registry skills just installed are no longer in the keep
-                                # set, so the very next apply_plan disables them and the Bot
-                                # ships with none of the domain skills its manifest asked for --
-                                # while `missing` is empty and nothing looks wrong.
-                                hresult = harness_mod.plan(pdir, manifest, cfg,
-                                                           extra_keep=registry_kept)
-                cfg = harness_mod.apply_plan(cfg, hresult, set((s.get("taught_skills") or {}).keys()))
+                cfg, harness = harness_mod.curate(pdir, harness["manifest"], cfg, registry_mod, root,
+                                                  install=settings.get("harness_install", True),
+                                                  taught=set((s.get("taught_skills") or {}).keys()))
                 dump_yaml(cfg_path, cfg)
-                harness = harness_mod.report(manifest, hresult, entries)
             except Exception as exc:
                 harness = {"domain": harness.get("domain"), "error": f"harness curation failed: {exc}"[:200]}
 

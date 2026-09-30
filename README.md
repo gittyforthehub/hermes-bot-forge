@@ -389,6 +389,8 @@ heads up: Nova already works in this territory
 
 It scores the Bot's own SOUL.md and one-job against the directory Hermes is running in, the repos under it, and this install's Bots, skills and plugins — then writes the answer into the Bot's memory, so it knows on turn one and never researches your machine again. Deterministic word matching, not a model call: no tokens, no waiting, no questions.
 
+**Upgrade a Bot you already have.** `update_agent(name="legal", harness="legal")` applies an expert harness in place — the same curation `create_agent` runs — keeping the Bot's memory and chats. Bundled domains: `ios`, `legal`, `tax`.
+
 **It also refuses to build a Bot you already have.** If an existing Bot's job covers the new one, `create_agent` stops and names it, so a roster of twenty Bots doesn't quietly become a roster of twenty overlapping ones.
 
 Read-only and shallow — directory names, git remotes, and the head of a README / AGENTS.md / CLAUDE.md. Never your source files, never your home directory unless you point `workspace_roots` at it, and anything that looks like a credential never reaches a Bot's memory. Off with `workspace_survey: false`.
@@ -437,7 +439,7 @@ echo '{"action":"digest"}' | python3 ~/.hermes/plugins/bot-forge/notify.py
 
 So a Bot that drafts posts never publishes one, and knows who to escalate to.
 
-Bundled skill: `bot-forge:bot-forge` — role defaults, naming rules and a SOUL.md template your agent follows.
+Bundled skill: `bot-forge:bot-forge-v2` — role defaults, naming rules and a SOUL.md template your agent follows.
 
 ## How it works
 

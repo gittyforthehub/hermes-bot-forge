@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "domain": "tax",
+  "label": "CPA-prep and tax research for a small business",
+  "summary": "Researches entity, sales/use, occupancy/lodging and information-reporting tax questions, reads financial documents and spreadsheets, and assembles question packets and digest memos for a human CPA. Never files, pays, or states a final tax position.",
+  "skills": [
+    "cpa-engagement-packet",
+    "omh-finance-analysis",
+    "xlsx",
+    "pdf",
+    "docx",
+    "document-to-action-items",
+    "obsidian",
+    "grounded-citations",
+    "jacob-operating-policy",
+    "jacob-decision-framework",
+    "qmd-memory"
+  ],
+  "skill_categories": [],
+  "toolsets": ["file", "web", "browser", "code_execution"],
+  "approvals": [
+    "filing, submitting, or registering anything with the IRS, a state, a county, or a tax platform",
+    "paying any tax, fee, or penalty, or connecting a bank or accounting account",
+    "stating a final tax position rather than a question packet for the human CPA",
+    "sending financial records or tax documents anywhere off this machine"
+  ],
+  "defaults": {
+    "sandbox": "local"
+  }
+}

@@ -16,7 +16,7 @@ CREATE_AGENT = {
         "and memories, sets tools and skills, adds routines, opens its Bot Chat with a self-introduction, starts "
         "its gateway, and rolls everything back on failure. The Bot appears in Desktop Bot Mode with its name "
         "and face. Takes 1-3 minutes. After it succeeds, do not message, test or change the new Bot — just "
-        "report. Pass `template` to start from a proven design. Load skill 'bot-forge:bot-forge' for role "
+        "report. Pass `template` to start from a proven design. Load skill 'bot-forge:bot-forge-v2' for role "
         "defaults if unsure."
     ),
     "parameters": {
@@ -53,7 +53,7 @@ CREATE_AGENT = {
                 "domain key for a curated expert skill set — installs the right skills from the skill registries "
                 "and disables everything else, so the Bot is genuinely expert rather than broadly general. Use "
                 "whenever the job maps to a known domain. Call `harness_domains` first for the authoritative list; "
-                "'ios' is the only one bundled today. For any other domain, author a manifest yourself and pass it "
+                "'ios', 'legal' and 'tax' are bundled. For any other domain, author a manifest yourself and pass it "
                 "as `harness_manifest` rather than guessing a key. The domain's toolsets, sandbox and approval "
                 "defaults are applied too, and an unknown key is reported, not silently ignored.")},
             "ack_reactions": {"type": "boolean", "description": (
@@ -163,6 +163,15 @@ UPDATE_AGENT = {
                 "true installs the reaction hook inside this Bot so it can tapback the user's own message in the "
                 "desktop app; needed once for a Bot created before that shipped")},
             "model": {"type": "object", "description": "model block {default, provider, base_url} — only when asked"},
+            "harness": {"type": "string", "description": (
+                "apply a curated expert harness to this existing Bot, in place — the same curation create_agent "
+                "does: install the domain's registry skills, disable everything off the allowlist, add the "
+                "domain's toolsets and approval prompts. Call harness_domains for the list. Backs up config "
+                "and SOUL.md first; chat history and memory are kept.")},
+            "harness_manifest": {"type": "object", "description": (
+                "inline harness manifest (same shape as harnesses/*.json) for a domain that is not bundled")},
+            "approvals": {"type": "array", "items": {"type": "string"}, "description": (
+                "with a harness: approval prompts to add to 'Ask first' instead of the manifest's own")},
             "add_routines": {"type": "array", "items": {
                 "type": "object",
                 "properties": {"name": {"type": "string"}, "schedule": {"type": "string"}, "prompt": {"type": "string"}},

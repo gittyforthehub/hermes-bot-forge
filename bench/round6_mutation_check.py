@@ -37,10 +37,10 @@ MUTATIONS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "K3", "the repair loop re-plans without extra_keep again (registry skills get disabled)",
-        "forge.py",
-        "                                hresult = harness_mod.plan(pdir, manifest, cfg,\n"
-        "                                                           extra_keep=registry_kept)\n",
-        "                                hresult = harness_mod.plan(pdir, manifest, cfg)\n",
+        # 0.19.0 moved the curation path into harness.curate (shared by create and update).
+        "harness.py",
+        "                    result = plan(pdir, manifest, cfg, extra_keep=registry_kept)\n",
+        "                    result = plan(pdir, manifest, cfg)\n",
     ),
     (
         "K4", "a failed install counts as resolved again (required skill reports no gap)",
@@ -50,9 +50,9 @@ MUTATIONS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "K5", "an identifier-only registry entry is not added to the keep-set again",
-        "forge.py",
-        '                        installed_name = entry.get("name") or entry["identifier"].rstrip("/").rsplit("/", 1)[-1]\n',
-        '                        installed_name = entry.get("name")\n',
+        "harness.py",
+        '            installed_name = entry.get("name") or entry["identifier"].rstrip("/").rsplit("/", 1)[-1]\n',
+        '            installed_name = entry.get("name")\n',
     ),
 ]
 

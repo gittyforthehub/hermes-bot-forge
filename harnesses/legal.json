@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "domain": "legal",
+  "label": "Legal review for a solo operator",
+  "summary": "Reviews contracts, NDAs, vendor/SaaS terms, launches and marketing claims, and researches marketplace, consumer-protection and health-data privacy law. Produces issue lists and drafts for attorney review; never signs, files, sends or gives a final legal position.",
+  "skills": [
+    "contract-review",
+    "nda-review",
+    "vendor-agreement-review",
+    "saas-msa-review",
+    "launch-review",
+    "marketing-claims-review",
+    "marketing-claim-risk",
+    "feature-risk-assessment",
+    "is-this-a-problem",
+    "marketplace-law",
+    "privacy-health-data",
+    "consumer-language-research",
+    "omh-legal-compliance-review",
+    "grounded-citations",
+    "jacob-operating-policy",
+    "jacob-decision-framework",
+    "qmd-memory"
+  ],
+  "skill_categories": [],
+  "toolsets": ["file", "web", "browser", "vision"],
+  "approvals": [
+    "sending, signing, filing, or submitting anything to a counterparty, court, agency, or platform",
+    "presenting output as legal advice or a final position rather than a draft for attorney review",
+    "engaging or paying outside counsel or any paid legal service",
+    "publishing terms of service, a privacy policy, or a marketing claim"
+  ],
+  "defaults": {
+    "sandbox": "local"
+  }
+}

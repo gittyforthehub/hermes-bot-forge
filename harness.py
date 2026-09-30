@@ -361,3 +361,87 @@ def report(manifest: dict, result: dict, registry_entries: list[dict] | None = N
         "optional_unresolved": [e.get("identifier") or e.get("query") for e in optional
                                 if e.get("status") != "resolved"],
     }
+
+
+# ── shared entry points (create_agent and update_agent both use these) ───────
+def resolve_request(domain, inline_manifest, root: Path | None = None) -> tuple[dict | None, str | None]:
+    """Turn a caller's `harness` / `harness_manifest` into a manifest, or an error.
+
+    Returns (manifest, None), (None, error), or (None, None) when nothing was asked for.
+    An explicit request that cannot be satisfied is always an error: the caller asked for an
+    expert and must never receive an uncurated generalist without being told.
+    """
+    if isinstance(inline_manifest, str):
+        try:
+            inline_manifest = json.loads(inline_manifest)
+        except json.JSONDecodeError as exc:
+            return None, f"harness_manifest is not valid JSON: {exc}"[:200]
+    if inline_manifest is None:
+        inline_manifest = {}
+    if not isinstance(inline_manifest, dict):
+        return None, "harness_manifest must be a JSON object"
+    domain = domain or inline_manifest.get("domain")
+    if not domain and not inline_manifest:
+        return None, None
+    manifest = inline_manifest or load_manifest(str(domain or ""), root)
+    if not manifest:
+        if inline_manifest:
+            return None, ("harness_manifest has no 'skills' key — an expert must name at least one "
+                          "skill; use a domain manifest from harnesses/ for a ready-made set")
+        return None, f"no harness manifest for '{domain}' (available: {', '.join(available_domains())})"
+    if not _name_list(manifest.get("skills")) and not _name_list(manifest.get("skill_categories")):
+        return None, ("harness_manifest names no skills and no skill_categories — an expert must "
+                      "specify at least one skill")
+    manifest = dict(manifest)
+    manifest.setdefault("domain", domain)
+    return manifest, None
+
+
+def manifest_approvals(manifest: dict) -> list[str]:
+    """Approvals may sit under `defaults` or at the top level; the README documented both."""
+    defaults = manifest.get("defaults") or {}
+    return [a for a in (defaults.get("approvals") or manifest.get("approvals") or []) if isinstance(a, str)]
+
+
+def curate(pdir: Path, manifest: dict, cfg: dict, registry_mod, root: Path,
+           install: bool = True, taught: set[str] | None = None) -> tuple[dict, dict]:
+    """Install a manifest's registry skills, then reduce the profile to its allowlist.
+
+    Returns (new_cfg, report). The caller writes the config. `registry_mod.install` writes
+    skills to disk, so this is not pure — but it never writes config itself.
+    """
+    import forge  # local: forge imports this module
+
+    cfg_path = Path(pdir) / "config.yaml"
+    entries = resolve_registry(registry_mod, manifest) if install else []
+    # Skills a manifest pulls from a registry belong to the curated set even though they are
+    # not in `manifest["skills"]`. Without this keep-set they install and are disabled in the
+    # same pass.
+    registry_kept: set[str] = set()
+    for entry in entries:
+        if entry.get("status") == "resolved" and entry.get("identifier"):
+            outcome = registry_mod.install(entry["identifier"], entry.get("category"),
+                                           entry.get("name"), root=root)
+            entry["install"] = outcome.get("status")
+            # An identifier-only entry has no `name`; the installed directory is the last segment.
+            installed_name = entry.get("name") or entry["identifier"].rstrip("/").rsplit("/", 1)[-1]
+            if outcome.get("status") == "installed" and installed_name:
+                registry_kept.add(installed_name)
+    if entries and cfg_path.exists():
+        cfg = forge.load_yaml(cfg_path)  # an install may have touched the profile config
+    result = plan(pdir, manifest, cfg, extra_keep=registry_kept)
+    if result["missing"] and install:
+        # A missing local name needs a path-shaped registry identifier to install; look it up.
+        for name in list(result["missing"]):
+            hit = resolve_registry_skill(registry_mod, {"query": name, "optional": False})
+            if hit.get("status") == "resolved" and hit.get("identifier"):
+                outcome = registry_mod.install(hit["identifier"], hit.get("category"),
+                                               hit.get("name"), root=root)
+                if outcome.get("status") == "installed":
+                    if cfg_path.exists():
+                        cfg = forge.load_yaml(cfg_path)
+                    # extra_keep must survive the re-plan, or the registry skills just
+                    # installed are disabled by the next apply_plan.
+                    result = plan(pdir, manifest, cfg, extra_keep=registry_kept)
+    cfg = apply_plan(cfg, result, taught or set())
+    return cfg, report(manifest, result, entries)

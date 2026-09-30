@@ -1,7 +1,7 @@
 ---
-name: bot-forge
+name: bot-forge-v2
 description: "Design a new Hermes Bot from one sentence and spawn it with the create_agent tool. Role defaults, SOUL.md template, zero questions."
-version: 0.18.3
+version: 0.19.0
 author: Bikash Joshi
 license: MIT
 platforms: [linux, macos, windows]
@@ -10,7 +10,7 @@ metadata:
     tags: [bots, bot-mode, profiles, spawn, create-agent]
 ---
 
-# Bot Forge
+# Bot Forge v2
 
 The user says "i want a <role>" → you design that Bot and call `create_agent` **now**.
 
@@ -96,7 +96,7 @@ The result's `workspace` block is what you report: `fits` (the places it belongs
 **If the tool refuses with `covered_by`,** an existing Bot already does this job. Do not retry blindly. Tell the user which Bot holds it and offer the two real choices: a narrower job for the new Bot, or `update_agent` on the existing one. Only pass `allow_overlap: true` after they say they want both.
 
 ## Expert harnesses
-When the ask is for a Bot that is genuinely *good at a specialist domain* — iOS apps, trading, social media, running a business, tuning Hermes — call `harness_domains` first, then pass the matching key as `harness` in `create_agent`. A harness installs the domain's skills from the registries, verifies each one resolves, and disables every other skill the profile can load — shared and OMH skills included, since `skills.disabled` is matched by name across all skill directories. The result is a sharp Bot, not a generalist wearing a specialist's name. Bundled: `ios`. For any other domain, write a manifest yourself and pass it as `harness_manifest` (see `docs/expert-harnesses.md`) — one JSON object, no code. It must name at least one skill; a manifest with none is reported as an error rather than quietly producing a generalist.
+When the ask is for a Bot that is genuinely *good at a specialist domain* — iOS apps, trading, social media, running a business, tuning Hermes — call `harness_domains` first, then pass the matching key as `harness` in `create_agent`. A harness installs the domain's skills from the registries, verifies each one resolves, and disables every other skill the profile can load — shared and OMH skills included, since `skills.disabled` is matched by name across all skill directories. The result is a sharp Bot, not a generalist wearing a specialist's name. Bundled: `ios`, `legal`, `tax`. To upgrade a Bot that already exists, pass the same `harness` to `update_agent` instead — it curates in place and keeps memory and chats. For any other domain, write a manifest yourself and pass it as `harness_manifest` (see `docs/expert-harnesses.md`) — one JSON object, no code. It must name at least one skill; a manifest with none is reported as an error rather than quietly producing a generalist.
 
 An unknown `harness` key never fails the build: the result carries a `harness.error` and the list of domains that do exist. Report a non-empty `harness.gaps` to the user — those skills could not be found, so the Bot is less expert than its label suggests.
 

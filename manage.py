@@ -213,8 +213,57 @@ def op_update(s: dict, root: Path, settings: dict) -> dict:
         cfg["model"] = s["model"]
         cfg_touched = True
         changed.append("model")
-    if cfg_touched:
+
+    # expert harness, in place: the same resolve + curate create_agent runs, on an existing Bot.
+    harness_report = None
+    if s.get("harness") or s.get("harness_manifest"):
+        import harness as harness_mod
+        import registry as registry_mod
+
+        manifest, herr = harness_mod.resolve_request(s.get("harness"), s.get("harness_manifest"), root)
+        if herr or not manifest:
+            raise ValueError(herr or "no harness manifest resolved")
+        tools_now = set((cfg.get("platform_toolsets") or {}).get("cli") or forge.BASE_TOOLSETS)
+        wanted = {t for t in (manifest.get("toolsets") or []) if t in forge.ALL_TOOLSETS}
+        if wanted - tools_now:
+            cfg.setdefault("platform_toolsets", {})["cli"] = sorted(tools_now | wanted)
+            if "tools" not in changed:
+                changed.append("tools")
         backups["config.yaml"] = _backup(pdir, "config.yaml")
+        # Write the pending edits first: curation re-reads config after registry installs.
+        forge.dump_yaml(cfg_path, cfg)
+        cfg, harness_report = harness_mod.curate(
+            pdir, manifest, cfg, registry_mod, root,
+            install=settings.get("harness_install", True) is not False)
+        cfg_touched = True
+        changed.append("harness")
+        approvals = s.get("approvals")
+        approvals = harness_mod.manifest_approvals(manifest) if approvals is None else list(approvals)
+        if approvals:
+            cur = soul_path.read_text() if soul_path.exists() else ""
+            add = [a for a in approvals if a not in cur]
+            if add:
+                if "SOUL.md" not in backups:
+                    backups["SOUL.md"] = _backup(pdir, "SOUL.md")
+                if "## Ask first" in cur:
+                    head, _, tail = cur.partition("## Ask first")
+                    lines = tail.split("\n")
+                    # insert after the header's intro line(s), before the next section
+                    i = 1
+                    while i < len(lines) and (lines[i].startswith("- ") or lines[i].startswith("Never do")):
+                        i += 1
+                    lines[i:i] = [f"- {a}" for a in add]
+                    cur = head + "## Ask first" + "\n".join(lines)
+                else:
+                    cur = cur.rstrip() + "\n" + forge.guardrails_block(add, "")
+                soul_path.write_text(cur)
+                changed.append("approvals")
+    elif s.get("approvals"):
+        raise ValueError("approvals is applied with a harness; use soul_append to add an approval alone")
+
+    if cfg_touched:
+        if "config.yaml" not in backups:
+            backups["config.yaml"] = _backup(pdir, "config.yaml")
         forge.dump_yaml(cfg_path, cfg)
 
     # routines
@@ -236,9 +285,10 @@ def op_update(s: dict, root: Path, settings: dict) -> dict:
     if not changed:
         return {"ok": False, "name": name, "error": "nothing to update — pass soul_md/soul_append, display_name, "
                                                     "description, memory, add_toolsets, skill_categories, model, "
-                                                    "avatar_kind, ack_reactions, ack_tapback or routines"}
+                                                    "avatar_kind, ack_reactions, ack_tapback, harness or routines"}
     return {"ok": True, "name": name, "display_name": _bot_meta(pdir).get("title") or name, "changed": changed,
             "routines_added": routines_added, "routines_removed": routines_removed,
+            "harness": harness_report,
             "backups": {k: v for k, v in backups.items() if v},
             "note": "changes apply to the Bot's next turn; its open Bot Chat keeps its history"}
 
