@@ -63,7 +63,7 @@ def default_root() -> Path:
     return Path.home() / ".hermes"
 
 
-DEFAULT_SETTINGS = {"inherit_model": True, "fallback_model": {},
+DEFAULT_SETTINGS = {"inherit_model": True, "inherit_from": "main", "fallback_model": {},
                     "probe_local_models": False, "install_gateway": True, "suggest_connectors": True,
                     "journal_enabled": True, "ack_reactions": True, "ack_tapback": True,
                     "workspace_survey": True, "workspace_roots": [],
@@ -88,6 +88,40 @@ def _is_temp_root(root) -> bool:
     except (OSError, TypeError):
         return False
     return r == tmp or tmp in r.parents
+
+
+# Never linked into a Bot: a Bot must not gain the power to create or delete Bots.
+NO_LINK_PLUGINS = {"bot-forge"}
+
+
+def link_main_plugins(root: Path, pdir: Path) -> list[str]:
+    """Link every plugin the main profile has enabled into the Bot.
+
+    `hermes profile create --clone-from default` copies the enabled list but not root-installed
+    plugin directories, and a profile only loads plugins under its own `plugins/`. So a Bot
+    cloned from a main profile on a plugin provider (e.g. a Claude subscription plugin) listed
+    the plugin, never loaded it, and silently fell back to another model.
+    """
+    root_cfg = load_yaml(Path(root) / "config.yaml")
+    enabled = ((root_cfg.get("plugins") or {}).get("enabled") or []) if isinstance(root_cfg.get("plugins"), dict) else []
+    linked = []
+    dest_dir = Path(pdir) / "plugins"
+    for name in enabled:
+        if not isinstance(name, str) or name in NO_LINK_PLUGINS or "/" in name or name.startswith("."):
+            continue
+        src = Path(root) / "plugins" / name
+        if not (src / "plugin.yaml").is_file():
+            continue
+        dest = dest_dir / name
+        if dest.exists() or dest.is_symlink():
+            continue
+        try:
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest.symlink_to(src)
+            linked.append(name)
+        except OSError:
+            continue
+    return linked
 
 
 def run(root, *args, timeout=180, check=True):
@@ -743,13 +777,17 @@ def forge(s: dict) -> dict:
             skills_cfg = cfg.get("skills") if isinstance(cfg.get("skills"), dict) else {}
             skills_cfg["disabled"] = sorted(set(skills_cfg.get("disabled") or []) | disabled)
             cfg["skills"] = skills_cfg
+        # Model: the main profile's by default, so a new Bot starts on the user's own defaults no
+        # matter which Bot asked for it. `inherit_from: caller` restores the old behaviour.
         launch = s.get("launch_profile") or "default"
+        source = "default" if (settings.get("inherit_from") or "main") == "main" else launch
         if s.get("model"):
             cfg["model"] = s["model"]
         elif settings["inherit_model"]:
-            launch_model = load_yaml((root if launch == "default" else root / "profiles" / launch) / "config.yaml").get("model")
-            if isinstance(launch_model, dict) and launch_model.get("default"):
-                cfg["model"] = launch_model
+            src_model = load_yaml((root if source == "default" else root / "profiles" / source) / "config.yaml").get("model")
+            if isinstance(src_model, dict) and src_model.get("default"):
+                cfg["model"] = src_model
+        link_main_plugins(root, pdir)
         if sandbox not in ("", "local"):  # the Bot's shell runs in its own container, not on this machine
             terminal = cfg.get("terminal") if isinstance(cfg.get("terminal"), dict) else {}
             terminal["backend"] = sandbox

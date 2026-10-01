@@ -3,6 +3,28 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - 2026-10-01
+
+A new Bot starts on the main profile's defaults, so nothing has to be changed by hand after
+`create_agent`.
+
+### Changed
+- **Model comes from the main profile, not from the Bot that asked.** Previously
+  `inherit_model` copied the *calling* profile's model, so a Bot created from inside a specialist
+  Bot got that specialist's model. New setting `inherit_from` (`main` default, `caller` for the
+  old behaviour).
+
+### Fixed
+- **Main-profile plugins are now linked into every new Bot.** `hermes profile create
+  --clone-from default` copies the enabled-plugin list but not the root-installed plugin
+  directories, and a profile only loads plugins under its own `plugins/`. A Bot cloned from a
+  main profile on a plugin provider listed the plugin, never loaded it, and silently fell back
+  to a free model (hit on Quill, Plumb, Legal and Cpa Tax). `bot-forge` itself is never linked,
+  so a Bot cannot create or delete Bots.
+
+### Gates
+- round7 gains L4–L6, one mutation per change above.
+
 ## [0.19.0] - 2026-09-30
 
 Bot Forge v2: an existing Bot can be made an expert in place, and three defects in the

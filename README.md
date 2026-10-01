@@ -248,7 +248,8 @@ plugins:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `inherit_model` | `true` | New Bots use the model of the profile that asked for them, like Bot Mode's New Agent. |
+| `inherit_model` | `true` | New Bots copy a model instead of picking their own. |
+| `inherit_from` | `main` | Whose model: `main` (the main profile) or `caller` (the Bot that asked). Everything else — providers, MCP servers, tool config, memory settings — is cloned from the main profile, and its enabled plugins are linked in. |
 | `fallback_model` | `{}` | Model to switch a Bot to when its inherited model can't sign in, e.g. `{default: qwen3, provider: custom, base_url: http://127.0.0.1:8080/v1}`. |
 | `probe_local_models` | `false` | With no `fallback_model`, look for a local llama.cpp / Ollama / LM Studio server to fall back to. |
 | `install_gateway` | `true` | Install and start a gateway service per Bot (skipped on Windows). |

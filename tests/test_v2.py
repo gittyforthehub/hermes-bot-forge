@@ -235,3 +235,76 @@ class SkillRename(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InheritMainProfileDefaults(unittest.TestCase):
+    """A new Bot should start from the main profile's defaults without hand-editing:
+    its model, and the plugins the main profile has enabled — including the provider plugin
+    that model needs. Previously the model came from whichever profile *asked* for the Bot,
+    and root-installed plugins were listed in config but never linked into the Bot, so a Bot
+    on a plugin provider silently fell back to a free model."""
+
+    def _root(self, t):
+        root = make_root(Path(t))
+        (root / "config.yaml").write_text(yaml.safe_dump({
+            "model": {"default": "main-model", "provider": "main-provider", "base_url": "process://x"},
+            "plugins": {"enabled": ["bot-forge", "provider-plugin", "omh", "not-installed"]}}))
+        for p in ("bot-forge", "provider-plugin", "omh"):
+            (root / "plugins" / p).mkdir(parents=True)
+            (root / "plugins" / p / "plugin.yaml").write_text(f"name: {p}\n")
+        caller = root / "profiles" / "legal"
+        caller.mkdir(parents=True)
+        (caller / "config.yaml").write_text(yaml.safe_dump({"model": {"default": "caller-model", "provider": "c"}}))
+        return root
+
+    def _forge(self, root, **settings):
+        def fake_run(r, *a, **k):
+            if a[:2] == ("profile", "create"):
+                d = Path(r) / "profiles" / a[2]
+                (d / "plugins").mkdir(parents=True, exist_ok=True)
+                # `--clone-from default` copies config.yaml
+                (d / "config.yaml").write_text((Path(r) / "config.yaml").read_text())
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        spec = {"hermes_root": str(root), "role": "Researcher", "display_name": "Kestrel",
+                "launch_profile": "legal",
+                "settings": {"install_gateway": False, "workspace_survey": False, "journal_enabled": False,
+                             "ack_tapback": False, "ack_reactions": False, **settings}}
+        with mock.patch.object(forge, "run", side_effect=fake_run), \
+                mock.patch.object(forge, "bot_chat", return_value=(True, "hi")), \
+                mock.patch.object(forge, "existing_bot_names", return_value=set()):
+            out = forge.forge(spec)
+        self.assertTrue(out["ok"], out.get("error"))
+        return root / "profiles" / out["name"]
+
+    def test_model_comes_from_the_main_profile_not_the_caller(self):
+        with tempfile.TemporaryDirectory() as t:
+            pdir = self._forge(self._root(t))
+            model = yaml.safe_load((pdir / "config.yaml").read_text())["model"]
+            self.assertEqual(model["default"], "main-model")
+            self.assertEqual(model["provider"], "main-provider")
+
+    def test_caller_model_is_still_available_as_an_option(self):
+        with tempfile.TemporaryDirectory() as t:
+            pdir = self._forge(self._root(t), inherit_from="caller")
+            self.assertEqual(yaml.safe_load((pdir / "config.yaml").read_text())["model"]["default"], "caller-model")
+
+    def test_main_profile_plugins_are_linked_into_the_bot(self):
+        with tempfile.TemporaryDirectory() as t:
+            root = self._root(t)
+            pdir = self._forge(root)
+            for p in ("provider-plugin", "omh"):
+                link = pdir / "plugins" / p
+                self.assertTrue(link.is_symlink(), f"{p} not linked")
+                self.assertEqual(link.resolve(), (root / "plugins" / p).resolve())
+
+    def test_bot_forge_itself_is_never_linked_into_a_bot(self):
+        # A Bot must not gain the power to create or delete Bots.
+        with tempfile.TemporaryDirectory() as t:
+            pdir = self._forge(self._root(t))
+            self.assertFalse((pdir / "plugins" / "bot-forge").exists())
+
+    def test_an_enabled_plugin_that_is_not_installed_is_left_alone(self):
+        with tempfile.TemporaryDirectory() as t:
+            pdir = self._forge(self._root(t))
+            self.assertFalse((pdir / "plugins" / "not-installed").exists())

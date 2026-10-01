@@ -1,5 +1,5 @@
 name: bot-forge
-version: 0.19.0
+version: 0.20.0
 description: Say "make me a <role>" and your Hermes agent builds a complete, working Bot — name, face, SOUL.md, memory, tools, skills, routines, Bot Chat and gateway — tested and rolled back on failure.
 author: Bikash Joshi
 contributors:
@@ -35,6 +35,13 @@ config_schema:
     type: bool
     default: true
     description: New Bots use the model of the profile that asked for them (like Bot Mode's New Agent).
+  inherit_from:
+    type: str
+    default: main
+    description: >-
+      Whose model a new Bot starts on: `main` (the main profile, default) or `caller` (the Bot that
+      asked for it). Every other default — tools config, providers, MCP servers, memory, skills —
+      already comes from the main profile, and its enabled plugins are linked into the new Bot.
   fallback_model:
     type: dict
     default: {}

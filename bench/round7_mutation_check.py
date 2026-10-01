@@ -27,6 +27,24 @@ MUTATIONS = [
         '            pass\n',
     ),
     (
+        "L4", "a new Bot inherits the calling Bot's model again instead of the main profile's",
+        "forge.py",
+        '        source = "default" if (settings.get("inherit_from") or "main") == "main" else launch\n',
+        '        source = launch\n',
+    ),
+    (
+        "L5", "main-profile plugins are not linked into a new Bot again",
+        "forge.py",
+        '        link_main_plugins(root, pdir)\n',
+        '        pass\n',
+    ),
+    (
+        "L6", "bot-forge itself gets linked into new Bots",
+        "forge.py",
+        'NO_LINK_PLUGINS = {"bot-forge"}\n',
+        'NO_LINK_PLUGINS = set()\n',
+    ),
+    (
         "L3", "update_agent ignores a harness again",
         "manage.py",
         '    if s.get("harness") or s.get("harness_manifest"):\n',
